@@ -34,7 +34,7 @@ mpl.rcParams['legend.loc'] = 'upper right'
 
 blue_red = LinearSegmentedColormap.from_list("blue_red", ["blue", "red"])
 
-cws=[1]
+cws=[1,2]
 colors = blue_red(np.linspace(0, 1, len(cws))) 
 figsh, ax_sh = plt.subplots(figsize=(4.5, 4))
 
@@ -54,27 +54,27 @@ figuq, axavg = plt.subplots(figsize=(4, 4))
 xzoom1 =230
 xzoom2 =600
 root = "./out/Static/"
-filename="Staticfrozen0.1"
-for i, cw in enumerate(cws):
+cw =1
+for i, filename in enumerate(["Staticplus0.1","Staticminus0.1"]):
     dataSH = np.loadtxt(root+"Energy_"+filename+"_"+str(cw)+".csv",delimiter="\t")
     dt = dataSH[1,0] - dataSH[0,0]
-    ax_sh.plot(dataSH[:,0]/dt,dataSH[:,1]-dataSH[0,1],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
-    axavg.plot(dataSH[:,0]/dt,dataSH[:,3],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
+    ax_sh.plot(dataSH[:,0]/dt,dataSH[:,1]-dataSH[0,1],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i],marker="x",markersize=5)
+    axavg.plot(dataSH[:,0]/dt,dataSH[:,3],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i],marker="x",markersize=5)
 
-    axmec.plot(dataSH[:,0]/dt,dataSH[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
-    # axD.plot(dataSH[:,0]/dt,dataSH[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
+    axmec.plot(dataSH[:,0]/dt,dataSH[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i],marker="x",markersize=5)
+    # axD.plot(dataSH[:,0]/dt,dataSH[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i])
 
     datauq = np.loadtxt(root+"errors_"+filename+"_"+str(cw)+".csv",delimiter="\t")
     l2 = np.sqrt(datauq[:,1]**2 +datauq[:,2]**2 +datauq[:,3]**2 +datauq[:,4]**2)
-    ax2.plot(datauq[:,0]/dt,l2,lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
+    ax2.plot(datauq[:,0]/dt,l2,lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i],marker="x",markersize=5)
 
 
     D = -np.gradient(dataSH[:,1],dataSH[:,0]) -0.5*cw *np.pad(np.gradient(l2,datauq[:,0]),(len(dataSH[:,1])-len(l2),0),mode='constant')+dataSH[:,2]
-    ax_totalD.plot(dataSH[:,0]/dt,D,lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
-    # ax11.plot(datauq[:,0]/dt,datauq[:,1],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
-    # ax12.plot(datauq[:,0]/dt,datauq[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
-    # ax21.plot(datauq[:,0]/dt,datauq[:,3],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
-    # ax22.plot(datauq[:,0]/dt,datauq[:,4],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
+    ax_totalD.plot(dataSH[:,0]/dt,D,lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i],marker="x",markersize=5)
+    # ax11.plot(datauq[:,0]/dt,datauq[:,1],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i])
+    # ax12.plot(datauq[:,0]/dt,datauq[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i])
+    # ax21.plot(datauq[:,0]/dt,datauq[:,3],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i])
+    # ax22.plot(datauq[:,0]/dt,datauq[:,4],lw=0.9,label=r"$C_w={{{}}}$".format(i),color=colors[i])
 
 
     axins.plot(dataSH[:,0]/dt,dataSH[:,1]-dataSH[0,1],lw=0.9,color=colors[i])

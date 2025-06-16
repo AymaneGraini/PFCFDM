@@ -163,6 +163,7 @@ while t<simparams.tmax:
     amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))]) 
     pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
     pfProc.pfComp.Compute_current()
+    pfProc.pfComp.Compute_alpha_tilde()
     mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
     mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
     mec_proc.update_UP(pfProc)
@@ -178,6 +179,7 @@ while t<simparams.tmax:
     component_errors = [error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)]
     erros_history.append(component_errors)
     rel_erros_history.append([error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)])
+
     timestamps.append(t)
     if n%20==0:
         pfProc.write_output(t)
