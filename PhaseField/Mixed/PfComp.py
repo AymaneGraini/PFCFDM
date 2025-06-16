@@ -84,7 +84,7 @@ class PfComp:
                 q_field = ufl.as_vector([q[0],q[1]]) 
                 pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.pfFe.Re_amps[i]**2+self.pfFe.Im_amps[i]**2)/(2*self.sig**2))
                 exp+=pref*ufl.outer(q_field,j)
-            exp*=(2*3*np.pi)/len(self.pfFe.pfc_params.qs)
+            exp*=(2*3*np.pi)/len(self.pfFe.pfc_params.qs) #TODO - or +?
         elif self.pfFe.pfc_params.motion=="v":
             print("Updating with velocity")
             self.compute_velocityPFC_bis()

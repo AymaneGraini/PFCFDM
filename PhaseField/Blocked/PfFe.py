@@ -13,7 +13,7 @@ from utils.utils import *
 import scipy.ndimage as ndimage
 import jax.numpy as jnp
 from Simulation.Parameters import*
-
+import scifem
 
 
 
@@ -47,7 +47,7 @@ class PFFe:
 
         self.Vs_P2      = basix.ufl.element("Lagrange", self.domain.basix_cell(), 1,shape=(2,))
         self.vector_sp2 = fem.functionspace(self.domain, self.Vs_P2)
-
+        self.real_space = scifem.create_real_functionspace(self.domain)
 
     def set_funcs(self):
         """

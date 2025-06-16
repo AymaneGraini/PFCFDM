@@ -60,10 +60,10 @@ class PFC4(PFFe):
         self.Energyform = fem.form(((1/2)*(1-r)*self.psi0**2+(1/4)*self.psi0**4+
                                     (1/2)*self.chi0**2-ufl.inner(ufl.grad(self.psi0),ufl.grad(self.psi0)))
                                     *self.dx)
-        self.Avg_form = fem.form(self.SH_sol.sub(0)*self.dx)
+        self.Avg_form = fem.form((1/(self.sim_params.L*self.sim_params.H))*self.SH_sol.sub(0)*self.dx)
 
     def correct(self):
-        # psi_avg = fem.assemble_scalar(self.Avg_form)/(self.sim_params.L*self.sim_params.H)
+        # psi_avg = fem.assemble_scalar(self.Avg_form)/
         # self.corr.sub(0).interpolate(lambda x: x[0]*0.0+(self.pfc_params.avg-psi_avg))
         # self.SH_sol.x.array[:] += self.corr.x.array
 

@@ -22,8 +22,8 @@ class PfIO:
     def write_output(self,t):
         self.file.write_function(self.pfFe.psiout,t)
         self.file.write_function(self.pfFe.dFQW,t)
-        # self.file.write_function(self.alphaT,t)
-        # self.file.write_function(self.J,t)
+        self.file.write_function(self.pfComp.alphaT,t)
+        self.file.write_function(self.pfComp.J,t)
         # self.file.write_function(self.velocity,t)
         # self.file.write_function(self.micro_sigma,t)
         # self.file.write_function(self.micro_sigma_avg,t)

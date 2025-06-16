@@ -14,6 +14,7 @@ import jax.numpy as jnp
 from dolfinx.la import create_petsc_vector_wrap
 from .PfFe import *
 import time
+from dolfinx.cpp.la.petsc import scatter_local_vectors, get_local_vectors
 
 class PFSolver:
     def __init__(self,pfFe:PFFe):
@@ -36,7 +37,7 @@ class PFSolver:
                 )
             self.problem_pfc.assembleBiLinear()
         else:
-            self.A_pfc = fem.petsc.assemble_matrix_nest(self.pfFe.a_pfc, bcs=[])
+            self.A_pfc = fem.petsc.assemble_matrix_block(self.pfFe.a_pfc, bcs=[])
             self.A_pfc.assemble()
             self.problem_pfc = PETSc.KSP().create(self.pfFe.domain.comm)
             # self.psimonitor = CVmonitor()
@@ -47,6 +48,7 @@ class PFSolver:
 
             pc = self.problem_pfc.getPC()
             pc.setType(PETSc.PC.Type.LU)
+            pc.setFactorSolverType("mumps")
             # pc.setFieldSplitType(PETSc.PC.CompositeType.SCHUR)
             # pc.setFieldSplitSchurFactType(PETSc.PC.SchurFactType.UPPER)
 
@@ -68,10 +70,11 @@ class PFSolver:
             # kspS.getPC().setType('hypre')  
 
             pc.setReusePreconditioner(True)
-            self.x_pfc = PETSc.Vec().createNest([create_petsc_vector_wrap(self.pfFe.psi_sol.x), create_petsc_vector_wrap(self.pfFe.chi_sol.x)])
+            # self.x_pfc = PETSc.Vec().createNest([create_petsc_vector_wrap(self.pfFe.psi_sol.x), create_petsc_vector_wrap(self.pfFe.chi_sol.x)])
+            self.x_pfc = self.A_pfc.createVecLeft()
             self.x_pfc.zeroEntries()
-            
-    def solve(self):
+
+    def solve(self,avg):
         if self.pfFe.pfc_params.periodic:
             # with dolfinx.common.Timer() as t_cpu:
                 sol = self.problem_pfc.solve()
@@ -83,14 +86,28 @@ class PFSolver:
                 self.pfFe.pbcs[1].backsubstitution(self.pfFe.chi_sol)
 
         else:
-                self.b_pfc = fem.petsc.assemble_vector_nest(self.pfFe.L_pfc)
+                self.b_pfc = fem.petsc.assemble_vector_block(self.pfFe.L_pfc,self.pfFe.a_pfc,[])
+                b_local = get_local_vectors(self.b_pfc, self.pfFe.maps)
+
+                b_local[2][:] = avg*self.pfFe.sim_params.H*self.pfFe.sim_params.L
+
+                scatter_local_vectors(
+                        self.b_pfc,
+                        b_local,
+                        self.pfFe.maps,
+                    )
+                
+                self.b_pfc.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
                 # print("SOlving with ", self.x_pfc.getArray())
                 self.problem_pfc.solve(self.b_pfc, self.x_pfc)
-                
+
+                # print("sol = ",[self.pfFe.offsets[0],self.pfFe.offsets[1]])
+                self.pfFe.psi_sol.x.array[:self.pfFe.sizes[0]] = self.x_pfc.array_r[self.pfFe.offsets[0]:self.pfFe.offsets[1]]
+                self.pfFe.chi_sol.x.array[:self.pfFe.sizes[1]] = self.x_pfc.array_r[self.pfFe.offsets[1]:self.pfFe.offsets[2]]
                 # offset =self.pfFe.main_space.dofmap.index_map.size_local * self.pfFe.main_space.dofmap.index_map_bs
                 # u.x.array[:offset] = self.x.array_r[:offset]
                 # p.x.array[: (len(self.x.array_r) - offset)] = self.pfFe.main_space.x.array_r[offset:]
-    
+
     def set_chi_solver(self):
         self.chimonitor = CVmonitor()
         self.A_chi = fem.petsc.assemble_matrix(fem.form(self.pfFe.a22), bcs=[])

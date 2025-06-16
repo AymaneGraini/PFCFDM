@@ -10,15 +10,17 @@ class PfComp:
     def __init__(self,
                  pfFe : PFFe):
         self.pfFe = pfFe
+        self.sig  = self.pfFe.pfc_params.a0/122
         self.set_funcs()
-
     def set_funcs(self):
         """
             Defines the main functions computable from ψ like alpha, Q , V_d etc 
         """
-        self.alphaT = fem.Function(self.pfFe.tensor_sp3,name="alphaTild")
-        self.Q = fem.Function(self.pfFe.tensor_sp2,name="Q")
-
+        self.alphaT   = fem.Function(self.pfFe.tensor_sp3,name="alphaTild")
+        self.Q        = fem.Function(self.pfFe.tensor_sp2,name="Q")
+        self.velocity = fem.Function(self.pfFe.vector_sp2,name="Velocity")
+        self.J        = fem.Function(self.pfFe.tensor_sp2,name="J_tens")
+        self.alphaT   = fem.Function(self.pfFe.tensor_sp3,name="alphaTild")
 
     def update_cAmps(self,amps,order):
         for i in range(len(self.pfFe.pfc_params.qs)):
@@ -33,57 +35,57 @@ class PfComp:
 
     def compute_Q(self):
         exp=0
-        for i,q in enumerate(self.qs):
-            D=ufl.grad(self.Im_amps[i])*self.Re_amps[i]- ufl.grad(self.Re_amps[i])*self.Im_amps[i]
+        for i,q in enumerate(self.pfFe.pfc_params.qs):
+            D=ufl.grad(self.pfFe.Im_amps[i])*self.pfFe.Re_amps[i]- ufl.grad(self.pfFe.Re_amps[i])*self.pfFe.Im_amps[i]
             q_field = ufl.as_vector(q) 
-            pref=1/(self.Im_amps[i]**2+self.Re_amps[i]**2)
+            pref=1/(self.pfFe.Im_amps[i]**2+self.pfFe.Re_amps[i]**2)
             exp+=pref*ufl.outer(q_field,D)
-        exp*=2/len(self.qs)
-        self.QT.interpolate(fem.Expression(exp,self.tensor_sp2.element.interpolation_points()))
-        self.alphapfc.interpolate(fem.Expression(tcurl(extendT(self.QT)),self.tensor_sp3.element.interpolation_points()))
+        exp*=2/len(self.pfFe.pfc_params.qs)
+        self.QT.interpolate(fem.Expression(exp,self.pfFe.tensor_sp2.element.interpolation_points()))
+        self.alphapfc.interpolate(fem.Expression(tcurl(extendT(self.QT)),self.pfFe.tensor_sp3.element.interpolation_points()))
 
     def compute_velocityPFC(self):
         self.indicator.interpolate(fem.Expression(ufl.sqrt(self.alphaT[0,2]**2+self.alphaT[1,2]**2),self.scalar_sp.element.interpolation_points()))
         v_exp=0
-        for i,q in enumerate(self.qs):
-            D= ufl.cross(extendV(ufl.grad(self.Re_amps[i])),extendV(ufl.grad(self.Im_amps[i])))
-            Re_dot = (self.Re_amps[i]-self.Re_amps_old[i])/self.pfc_params["dt"]
-            Im_dot = (self.Im_amps[i]-self.Im_amps_old[i])/self.pfc_params["dt"]
-            j= Im_dot*ufl.grad(self.Re_amps[i])-Re_dot*ufl.grad(self.Im_amps[i])
+        for i,q in enumerate(self.pfFe.pfc_params.qs):
+            D= ufl.cross(extendV(ufl.grad(self.pfFe.Re_amps[i])),extendV(ufl.grad(self.pfFe.Im_amps[i])))
+            Re_dot = (self.pfFe.Re_amps[i]-self.pfFe.Re_amps_old[i])/self.pfFe.sim_params.dt
+            Im_dot = (self.pfFe.Im_amps[i]-self.pfFe.Im_amps_old[i])/self.pfFe.sim_params.dt
+            j= Im_dot*ufl.grad(self.pfFe.Re_amps[i])-Re_dot*ufl.grad(self.pfFe.Im_amps[i])
             q_field = ufl.as_vector([q[0],q[1],0])
             b= ufl.dot(self.alphaT,ufl.as_vector([0,0,1]))
             sn = ufl.dot(b/ufl.sqrt(ufl.dot(b,b)),q_field) # a scalar : WInding numer (but it's a density actually)
             v_exp += ((sn**2))*j/D[2]
-        v_exp*=12*np.pi**2/len(self.qs)
-        self.velocity.interpolate(fem.Expression(ufl.conditional(ufl.ge(self.indicator,1e-2),v_exp,ufl.as_vector([0,0])),self.vector_sp2.element.interpolation_points()))
+        v_exp*=12*np.pi**2/len(self.pfFe.pfc_params.qs)
+        self.velocity.interpolate(fem.Expression(ufl.conditional(ufl.ge(self.indicator,1e-2),v_exp,ufl.as_vector([0,0])),self.pfFe.vector_sp2.element.interpolation_points()))
 
     def compute_velocityPFC_bis(self):
-        self.indicator.interpolate(fem.Expression(ufl.sqrt(self.alphaT[0,2]**2+self.alphaT[1,2]**2),self.scalar_sp.element.interpolation_points()))
+        self.indicator.interpolate(fem.Expression(ufl.sqrt(self.alphaT[0,2]**2+self.alphaT[1,2]**2),self.pfFe.scalar_sp.element.interpolation_points()))
         S=0
         D=0
-        for i,q in enumerate(self.qs):
-            d= ufl.cross(extendV(ufl.grad(self.Re_amps[i])),extendV(ufl.grad(self.Im_amps[i])))
-            Re_dot = (self.Re_amps[i]-self.Re_amps_old[i])/self.pfc_params["dt"]
-            Im_dot = (self.Im_amps[i]-self.Im_amps_old[i])/self.pfc_params["dt"]
-            j= Im_dot*ufl.grad(self.Re_amps[i])-Re_dot*ufl.grad(self.Im_amps[i])
-            pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.Re_amps[i]**2+self.Im_amps[i]**2)/(2*self.sig**2))
+        for i,q in enumerate(self.pfFe.pfc_params.qs):
+            d= ufl.cross(extendV(ufl.grad(self.pfFe.Re_amps[i])),extendV(ufl.grad(self.pfFe.Im_amps[i])))
+            Re_dot = (self.pfFe.Re_amps[i]-self.pfFe.Re_amps_old[i])/self.pfFe.sim_params.dt
+            Im_dot = (self.pfFe.Im_amps[i]-self.pfFe.Im_amps_old[i])/self.pfFe.sim_params.dt
+            j= Im_dot*ufl.grad(self.pfFe.Re_amps[i])-Re_dot*ufl.grad(self.pfFe.Im_amps[i])
+            pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.pfFe.Re_amps[i]**2+self.pfFe.Im_amps[i]**2)/(2*self.sig**2))
             S+=3*pref*(q[0]**2+q[1]**2)*j
             D+=d
         v_exp=restrictV(ufl.cross(extendV(j),D)/ufl.dot(D,D))
-        self.velocity.interpolate(fem.Expression(ufl.conditional(ufl.ge(self.indicator,1e-2),v_exp,ufl.as_vector([0,0])),self.vector_sp2.element.interpolation_points()))
+        self.velocity.interpolate(fem.Expression(ufl.conditional(ufl.ge(self.indicator,1e-2),v_exp,ufl.as_vector([0,0])),self.pfFe.vector_sp2.element.interpolation_points()))
 
     def Compute_current(self):
-        if self.pfc_params['motion']=="up":
+        if self.pfFe.pfc_params.motion=="up":
             exp=0
-            for i,q in enumerate(self.qs):
-                Re_dot = (self.Re_amps[i]-self.Re_amps_old[i])/self.pfc_params["dt"]
-                Im_dot = (self.Im_amps[i]-self.Im_amps_old[i])/self.pfc_params["dt"]
-                j= Im_dot*ufl.grad(self.Re_amps[i])-Re_dot*ufl.grad(self.Im_amps[i])
+            for i,q in enumerate(self.pfFe.pfc_params.qs):
+                Re_dot = (self.pfFe.Re_amps[i]-self.pfFe.Re_amps_old[i])/self.pfFe.sim_params.dt
+                Im_dot = (self.pfFe.Im_amps[i]-self.pfFe.Im_amps_old[i])/self.pfFe.sim_params.dt
+                j= Im_dot*ufl.grad(self.pfFe.Re_amps[i])-Re_dot*ufl.grad(self.pfFe.Im_amps[i])
                 q_field = ufl.as_vector([q[0],q[1]]) 
-                pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.Re_amps[i]**2+self.Im_amps[i]**2)/(2*self.sig**2))
+                pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.pfFe.Re_amps[i]**2+self.pfFe.Im_amps[i]**2)/(2*self.sig**2))
                 exp+=pref*ufl.outer(q_field,j)
-            exp*=(2*3*np.pi)/len(self.qs)
-        elif self.pfc_params['motion']=="v":
+            exp*=(2*3*np.pi)/len(self.pfFe.pfc_params.qs) #TODO -1 ?
+        elif self.pfFe.pfc_params.motion=="v":
             print("Updating with velocity")
             self.compute_velocityPFC_bis()
             exp = restrictT(tcrossv(self.alphaT,extendV(self.velocity)))
@@ -91,17 +93,17 @@ class PfComp:
         else:
             raise ValueError("Not implemented way of updating UP")
         
-        self.J.interpolate(fem.Expression(exp,self.tensor_sp2.element.interpolation_points()))
+        self.J.interpolate(fem.Expression(exp,self.pfFe.tensor_sp2.element.interpolation_points()))
 
     def Compute_alpha_tilde(self):
         exp=0
-        for i,q in enumerate(self.qs):
-            D= ufl.cross(extendV(ufl.grad(self.Re_amps[i])),extendV(ufl.grad(self.Im_amps[i])))
+        for i,q in enumerate(self.pfFe.pfc_params.qs):
+            D= ufl.cross(extendV(ufl.grad(self.pfFe.Re_amps[i])),extendV(ufl.grad(self.pfFe.Im_amps[i])))
             q_field = ufl.as_vector([q[0],q[1],0]) 
-            pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.Re_amps[i]**2+self.Im_amps[i]**2)/(2*self.sig**2))
+            pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.pfFe.Re_amps[i]**2+self.pfFe.Im_amps[i]**2)/(2*self.sig**2))
             exp+=pref*ufl.outer(q_field,D)
-        exp*=(2*3*np.pi)/len(self.qs)
-        self.alphaT.interpolate(fem.Expression(exp,self.tensor_sp3.element.interpolation_points()))
+        exp*=(2*3*np.pi)/len(self.pfFe.pfc_params.qs)
+        self.alphaT.interpolate(fem.Expression(exp,self.pfFe.tensor_sp3.element.interpolation_points()))
 
 
     def Compute_microscopic_stress(self):

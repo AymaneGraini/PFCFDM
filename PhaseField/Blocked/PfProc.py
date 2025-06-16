@@ -44,6 +44,7 @@ class PfProc:
         self.pfFe.psi0.interpolate(lambda x: initialize_from_burgers(self.pfc_params.qs,self.pfc_params.ps,defects,A,self.pfc_params.avg)(x))
         self.pfFe.psiout.interpolate(self.pfFe.psi0)
         avg1= fem.assemble_scalar(fem.form(self.pfFe.psiout*self.pfFe.dx))/(self.sim_params.L*self.sim_params.H)
+        print("THe average in initing is ", avg1)
         self.avg_history.append(avg1)
 
     def Initialize(self,f0):
@@ -60,7 +61,7 @@ class PfProc:
         self.pfSolver.set_chi_solver()
 
     def Solve(self):
-        self.pfSolver.solve()
+        self.pfSolver.solve(self.avg_history[0])
         self.pfFe.psiout.interpolate(self.pfFe.psi_sol)
 
 

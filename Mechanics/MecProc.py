@@ -63,7 +63,7 @@ class MecProc:
             the current linked with the conservation of burgers vector
             Thus the Argument is the whole PFCsolver that contains J.
         """
-        self.mecFE.UP.x.array[:]=self.sim_params.dt*pfc_solver.pfComp.J.x.array[:]  # TODO maybe petsc.axpy is much faster ...
+        self.mecFE.UP.x.array[:]-=self.sim_params.dt*pfc_solver.pfComp.J.x.array[:]  # TODO maybe petsc.axpy is much faster ...
 
     def combine_UP(self):
         """

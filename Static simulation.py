@@ -1,5 +1,5 @@
-import PhaseField.Mixed as Mixed
-import PhaseField.Mixed.PfProc
+import PhaseField.Blocked as Blocked
+from PhaseField.Blocked import PfProc
 import Mechanics
 from Simulation.Parameters import *
 from Simulation.SimIO import *
@@ -17,6 +17,7 @@ import pyvista
 from dolfinx.la import create_petsc_vector_wrap
 from PFCproc_TODO.ProcessPFC_padFFT import *
 from jax import vjp, jvp
+
 
 if pyvista.OFF_SCREEN:
     pyvista.start_xvfb(wait=0.1)
@@ -41,11 +42,11 @@ geometry   = GeomParams(dx=pfcparms.a0/7,
                         Ny=12*22) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
 
 
-simparams = SimParams(1,1,True,True,1e-1,10,geometry.L,geometry.H)
+simparams = SimParams(1,5,True,True,1e-1,50,geometry.L,geometry.H)
 
 
-filename  = "Static"+str(simparams.dt)+"_"+str(simparams.Cw)
-path = "./out/Static/periodic/penaltyMec/"
+filename  = "static"+str(simparams.dt)+"_"+str(simparams.Cw)
+path = "./out/Static/"
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, path+filename+".xdmf", "w")
 
 
@@ -92,11 +93,10 @@ defects=[
 
 
 
-
 timestamps=[0]
 SH_Energy = []
 
-pfProc = Mixed.PfProc.PfProc(domain,pfcparms,simparams,file)
+pfProc = PfProc.PfProc(domain,pfcparms,simparams,file)
 pfProc.Initialize_crystal(defects)
 pfProc.init_solver()
 pfProc.Configure_solver()
@@ -145,6 +145,8 @@ component_errors_rel = [
     error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i))
     for i in range(4)
 ]
+avg_history=[fem.assemble_scalar(pfProc.pfFe.Avg_form)]
+
 erros_history=[component_errors]
 mechanical_dissipation=[0]
 rel_erros_history=[component_errors_rel]
@@ -165,8 +167,6 @@ while t<simparams.tmax:
     mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
     mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
     mec_proc.update_UP(pfProc)
-    # mec_proc.solveUPperp()
-    # mec_proc.combine_UP()
     mec_proc.solveU()
     mec_proc.extract_UE()  
     mec_proc.compute_sym()
@@ -176,6 +176,8 @@ while t<simparams.tmax:
     component_errors = [error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)]
     erros_history.append(component_errors)
     rel_erros_history.append([error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)])
+    avg_history.append(fem.assemble_scalar(pfProc.pfFe.Avg_form))
+
     timestamps.append(t)
     # pfProc.write_output(t)
     # mec_proc.write_output(t)
@@ -190,6 +192,6 @@ mec_proc.write_output(t)
 
 
 file.close()
-np.savetxt(path+"Energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy,mechanical_dissipation)),delimiter="\t")
+np.savetxt(path+"Energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy,mechanical_dissipation,avg_history)),delimiter="\t")
 np.savetxt(path+"errors_"+filename+".csv",np.column_stack((timestamps,erros_history)),delimiter="\t")
 
