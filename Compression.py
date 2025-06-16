@@ -19,7 +19,7 @@ import ufl
 from petsc4py import PETSc
 import pyvista
 from dolfinx.la import create_petsc_vector_wrap
-from PFCproc_TODO.ProcessPFC import *
+from PFCproc_TODO.ProcessPFC_padFFT import *
 from jax import vjp, jvp
 
 if pyvista.OFF_SCREEN:
@@ -41,13 +41,13 @@ pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3),
 
 geometry   = GeomParams(dx=pfcparms.a0/7,
                         dy=np.sqrt(3)*pfcparms.a0/12,
-                        Nx=7*12,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
-                        Ny=12*20) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
+                        Nx=7*26,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
+                        Ny=12*18) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
 
 
-simparams = SimParams(1,2,True,True,2e-1,300,geometry.L,geometry.H)
+simparams = SimParams(1,1,True,True,2e-1,300,geometry.L,geometry.H)
 
-filename  = "Compression"+str(simparams.dt)+"_"+str(simparams.Cw)
+filename  = "compressionPenaltyMec"+str(simparams.dt)+"_"+str(simparams.Cw)
 path = "./out/compression/"
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, path+filename+".xdmf", "w")
 
@@ -85,11 +85,12 @@ write_sim_settings(path+filename+".json",SimulationNote,
     "Simulation": simparams
 })
 
-xp1 = geometry.L/2
-yp1 = 3*geometry.H/4
-yp2 = 1*geometry.H/4
+xp= geometry.L/2
+yp = geometry.H/2
 
-defects=[]
+defects=[
+    # [xp,yp,[-1*pfcparms.a0,0]]
+]
 
 
 
@@ -105,7 +106,6 @@ pfProc.Configure_solver()
 amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))])
 pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
 mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-
 pfProc.get_SH_Energy()
 pfProc.write_output(0.0)
 mec_proc.write_output(0.0)
@@ -117,7 +117,7 @@ SH_Energy.append(pfProc.get_SH_Energy())
 t=0
 n=0
 #Relaxing the core!
-while t<200:
+while t<50:
     t+=simparams.dt
     pfProc.Solve()
     # pfProc.write_output(t)
@@ -143,18 +143,18 @@ def bottom(x):
     return np.isclose(x[1], 0)
 
 def top(x):
-    return np.isclose(x[1], geometry.H)
+    return np.isclose(x[1], geometry.H) 
 
 bottom_dofs = fem.locate_dofs_geometrical(mec_proc.mecFE.vector_sp2_quad, bottom)
 V_uy, map =  mec_proc.mecFE.vector_sp2_quad.sub(1).collapse()
 top_dofs_uy = fem.locate_dofs_geometrical(( mec_proc.mecFE.vector_sp2_quad.sub(1), V_uy), top)
 uD_y = fem.Function(V_uy)
-uD_y.interpolate(lambda x : x[0]*0-50)
+uD_y.interpolate(lambda x : x[0]*0-5)
 bcs = [
     fem.dirichletbc(np.zeros((2,)), bottom_dofs, mec_proc.mecFE.vector_sp2_quad),
     fem.dirichletbc(uD_y, top_dofs_uy,  mec_proc.mecFE.vector_sp2_quad.sub(1)),
 ]
-
+ 
 
 
 mec_proc.init_solver([],bcs)
@@ -176,7 +176,6 @@ component_errors = [
 ]
 erros_history=[component_errors]
 timestamps2=[t]
-
 ############################
 ########## correct for Q ##########
 ############################
@@ -189,9 +188,12 @@ while t<simparams.tmax:
     timestamps.append(t)
     SH_Energy.append(pfProc.get_SH_Energy())
     amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))]) 
-    pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
+    # pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
+    # pfProc.pfComp.Compute_alpha_tilde()
+    # pfProc.pfComp.Compute_current()
     mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
     mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+    # mec_proc.update_UP(pfProc)
     # mec_proc.solveUPperp()
     # mec_proc.combine_UP()
     mec_proc.solveU()
@@ -201,13 +203,14 @@ while t<simparams.tmax:
     component_errors = [error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)]
     erros_history.append(component_errors)
     timestamps2.append(t)
-    # pfProc.write_output(t)
-    # mec_proc.write_output(t)
+    if n%5==0:
+        pfProc.write_output(t)
+        mec_proc.write_output(t)
     print("t= ", t) 
     if np.isnan(pfProc.pfFe.psiout.x.array).all():
         print("Psi diverged")
         break
-
+t+=simparams.dt
 mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
 pfProc.write_output(t)
 mec_proc.write_output(t)

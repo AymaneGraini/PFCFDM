@@ -31,6 +31,7 @@ class PFC4(PFFe):
         self.psi0, self.chi0 = ufl.split(self.zeta0)
         (self.psi_current, self.chi_current) = ufl.TrialFunctions(self.MEl_space)
         self.q, self.v = ufl.TestFunctions(self.MEl_space)
+        self.corr=  fem.Function(self.MEl_space,name="Correction")
 
     def create_forms(self):
         r=self.pfc_params.r
@@ -59,13 +60,19 @@ class PFC4(PFFe):
         self.Energyform = fem.form(((1/2)*(1-r)*self.psi0**2+(1/4)*self.psi0**4+
                                     (1/2)*self.chi0**2-ufl.inner(ufl.grad(self.psi0),ufl.grad(self.psi0)))
                                     *self.dx)
-
+        self.Avg_form = fem.form(self.SH_sol.sub(0)*self.dx)
 
     def correct(self):
+        # psi_avg = fem.assemble_scalar(self.Avg_form)/(self.sim_params.L*self.sim_params.H)
+        # self.corr.sub(0).interpolate(lambda x: x[0]*0.0+(self.pfc_params.avg-psi_avg))
+        # self.SH_sol.x.array[:] += self.corr.x.array
+
         beta = (self.psiout.x.petsc_vec.dot(self.b_basis.x.petsc_vec)-self.pfc_params.avg)/self.b_basis_norm
         self.psiout.x.petsc_vec.axpy(-1.0*beta, self.b_basis.x.petsc_vec)
         self.psiout.x.petsc_vec.ghostUpdate(addv=PETSc.InsertMode.INSERT,mode=PETSc.ScatterMode.FORWARD)
         self.SH_sol.sub(0).interpolate(self.psiout)
+
+
         self.zeta0.interpolate(self.SH_sol)
         self.SH_sol.x.scatter_forward()
         self.zeta0.x.scatter_forward()

@@ -15,8 +15,7 @@ import ufl
 from petsc4py import PETSc
 import pyvista
 from dolfinx.la import create_petsc_vector_wrap
-from Q_compute import *
-from PFCproc_TODO.ProcessPFC import *
+from PFCproc_TODO.ProcessPFC_padFFT import *
 from jax import vjp, jvp
 
 if pyvista.OFF_SCREEN:
@@ -29,7 +28,7 @@ pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3),
                         ps         = hex_lat.ps,
                         r          = 1.4,
                         avg        = -0.5,
-                        periodic   = True,
+                        periodic   = False,
                         deg        = 4,
                         motion     = "up",
                         write_amps = False)
@@ -38,15 +37,15 @@ pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3),
 
 geometry   = GeomParams(dx=pfcparms.a0/7,
                         dy=np.sqrt(3)*pfcparms.a0/12,
-                        Nx=7*32,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
+                        Nx=7*33,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
                         Ny=12*22) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
 
 
-simparams = SimParams(1,0,True,False,2e-1,2000,geometry.L,geometry.H)
+simparams = SimParams(1,1,True,True,1e-1,10,geometry.L,geometry.H)
 
 
-filename  = "testshit delitee"+str(simparams.dt)+"_"+str(simparams.Cw)
-path = "./out/Static/periodic/nopenaltyMec/"
+filename  = "Static"+str(simparams.dt)+"_"+str(simparams.Cw)
+path = "./out/Static/periodic/penaltyMec/"
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, path+filename+".xdmf", "w")
 
 
@@ -65,15 +64,14 @@ mechparams = MechParams(  lambda_      = 3*Amp(pfcparms.avg,pfcparms.r)**2,
                           Cx           = 100*14*100/pfcparms.a0,
                           Cel          = 1,
                           f            = f,
-                          periodic_UP  = True,
-                          periodic_u   = True,
+                          periodic_UP  = False,
+                          periodic_u   = False,
                           addNullspace = False)
 
 mec_proc = Mechanics.MecProc.MecProc(domain,mechparams,simparams,file)
 file.write_mesh(domain)
 
-# SimulationNote = "Static simulation, Psi is first relaxed until t=200 then Ue is determined With the contribution of Q in the elastic stress. THen we gradient descent SH and penalty. throughout Dislocations are not moving, so we form alpha from psi then get Upperp to get UE (we considder the effect of Q in Ue)"
-SimulationNote = "Static simulation with periodic Bcs ( it doesn't make sense to have periodic bcs on the displacement u but i do it anyway..). Psi is first relaxed until t=200 then Ue is determined Without the  contribution of Q in the elastic stress. THen we gradient descent SH and penalty with a frozen UE."
+SimulationNote = "Static simulation without periodic Bcs of a fully coupled model"
 
 write_sim_settings(path+filename+".json",SimulationNote,
                    **{
@@ -88,8 +86,8 @@ yp1 = 3*geometry.H/4
 yp2 = 1*geometry.H/4
 
 defects=[
-    [xp1,yp1,[-1.*pfcparms.a0,0]],
-    [xp1,yp2,[+1.*pfcparms.a0,0]],
+    [xp1,yp1,[+1.*pfcparms.a0,0]],
+    [xp1,yp2,[-1.*pfcparms.a0,0]],
     ]
 
 
@@ -106,38 +104,23 @@ pfProc.Configure_solver()
 amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))])
 pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
 mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
+mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
 
-pfProc.get_SH_Energy()
-pfProc.write_output(0.0)
-mec_proc.write_output(0.0)
+# pfProc.get_SH_Energy()
 pfProc.Solve()
 pfProc.Correct()
-SH_Energy.append(pfProc.get_SH_Energy())
 # file.close()
 # exit()
 t=0
 n=0
-#Relaxing the core!
-while t<200:
-    t+=simparams.dt
-    pfProc.Solve()
-    # pfProc.write_output(t)
-    pfProc.Correct()
-    timestamps.append(t)
-    SH_Energy.append(pfProc.get_SH_Energy())
-
-# plt.figure(figsize=(4,4))
-# plt.plot(timestamps,SH_Energy,marker="x",lw=0.9,color="royalblue")
-# plt.show()
 
 
 t2=time.time()
 
+
 print("Starting mecha")
-amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))])
-pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
-mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+
+
 mec_proc.init_solver([],[])
 mec_proc.ConfigureSolver_UPperp()
 mec_proc.ConfigureSolver_u()
@@ -146,42 +129,54 @@ mec_proc.combine_UP()
 mec_proc.solveU()
 mec_proc.extract_UE()
 mec_proc.compute_sym()
+mec_proc.Get_Stress()
+mec_proc.Get_Curls()
 
 pfProc.write_output(t)
 
 mec_proc.write_output(t)
 
+
 component_errors = [
     error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i))
     for i in range(4)
 ]
+component_errors_rel = [
+    error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i))
+    for i in range(4)
+]
 erros_history=[component_errors]
-timestamps2=[t]
+mechanical_dissipation=[0]
+rel_erros_history=[component_errors_rel]
+timestamps=[t]
+SH_Energy.append(pfProc.get_SH_Energy())
 
-############################
-########## correct for Q ##########
-############################
+dissipation = fem.form(ufl.inner(mec_proc.mecComp.sigmaUe,pfProc.pfComp.J)*pfProc.pfFe.dx)
 
 while t<simparams.tmax:
     t+=simparams.dt
     pfProc.pfFe.dFQW.x.array[:] = jax_computegradFuq_sym(pfProc.pfFe.psiout.x.array,mec_proc.mecFE.UEsym.x.array,Proc)
     pfProc.Solve()
     pfProc.Correct()
-    timestamps.append(t)
     SH_Energy.append(pfProc.get_SH_Energy())
     amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))]) 
     pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
+    pfProc.pfComp.Compute_current()
     mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-    # mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+    mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+    mec_proc.update_UP(pfProc)
     # mec_proc.solveUPperp()
     # mec_proc.combine_UP()
-    # mec_proc.solveU()
-    # mec_proc.extract_UE()  
+    mec_proc.solveU()
+    mec_proc.extract_UE()  
     mec_proc.compute_sym()
+    mec_proc.Get_Stress()
 
+    mechanical_dissipation.append(fem.assemble_scalar(dissipation))
     component_errors = [error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)]
     erros_history.append(component_errors)
-    timestamps2.append(t)
+    rel_erros_history.append([error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)])
+    timestamps.append(t)
     # pfProc.write_output(t)
     # mec_proc.write_output(t)
     print("t= ", t) 
@@ -189,11 +184,12 @@ while t<simparams.tmax:
         print("Psi diverged")
         break
 
-mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
+mec_proc.Get_Curls()
 pfProc.write_output(t)
 mec_proc.write_output(t)
 
 
 file.close()
-np.savetxt(path+"SG_energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy)),delimiter="\t")
-np.savetxt(path+"errors_"+filename+".csv",np.column_stack((timestamps2,erros_history)),delimiter="\t")
+np.savetxt(path+"Energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy,mechanical_dissipation)),delimiter="\t")
+np.savetxt(path+"errors_"+filename+".csv",np.column_stack((timestamps,erros_history)),delimiter="\t")
+

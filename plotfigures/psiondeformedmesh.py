@@ -50,10 +50,9 @@ def get_im_data(filename,fieldname,ti,comp=None):
     return X,Y,field, timest,Map
 
 
-
 # ---- Step 1: Read the mesh and field data from the XDMF file ----
-file = "./out/indentation/indentation0.2_2.xdmf"
-fileh5 = "./out/indentation/indentation0.2_2.h5"
+file   = "./out/shear_nodislocation/Shear_dispadfft0.2_1.xdmf"
+fileh5 = "./out/shear_nodislocation/Shear_dispadfft0.2_1.h5"
 with XDMFFile(MPI.COMM_WORLD, file, "r") as xdmf:
     domain =  xdmf.read_mesh()
 
@@ -91,7 +90,7 @@ u.x.array[:] = u_flat
 psi_func.x.array[:] = Psi[:,0]
 
 print("dim ",domain.geometry.dim)
-domain.geometry.x[:, :domain.geometry.dim] += u.x.array.reshape((-1, domain.geometry.dim))
+domain.geometry.x[:, :domain.geometry.dim] += u.x.array.reshape((-1, domain.geometry.dim))*5
 
 cells, types, x = plot.vtk_mesh(domain)
 grid = pv.UnstructuredGrid(cells, types, x)

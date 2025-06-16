@@ -34,9 +34,18 @@ class MecComp:
 
         self.Qsym        = fem.Function(mecFE.tensor_sp2,name="Qsym")
 
+        self.curlUE   = fem.Function(mecFE.tensor_sp3,name="curlUe")
+        self.curlUP   = fem.Function(mecFE.tensor_sp3,name="curlUp")
+        self.curlQ   = fem.Function(mecFE.tensor_sp3,name="curlQ")
+
     def compute_sym(self):
         self.mecFE.UEsym.interpolate(fem.Expression(ufl.sym(self.mecFE.UE),self.mecFE.tensor_sp2.element.interpolation_points()))
         self.Qsym.interpolate(fem.Expression(ufl.sym(self.mecFE.Q),self.mecFE.tensor_sp2.element.interpolation_points()))
+
+    def compute_curls(self):
+        self.curlUE.interpolate(fem.Expression(tcurl(extendT(self.mecFE.UE)),self.mecFE.tensor_sp3.element.interpolation_points()))
+        self.curlUP.interpolate(fem.Expression(tcurl(extendT(self.mecFE.UP)),self.mecFE.tensor_sp3.element.interpolation_points()))
+        self.curlQ.interpolate(fem.Expression(tcurl(extendT(self.mecFE.Q)),self.mecFE.tensor_sp3.element.interpolation_points()))
 
     def compute_stresses(self):
         """

@@ -57,3 +57,4 @@ class PFSolver:
                     loc_b.set(0)
                 fem.petsc.assemble_vector(b_pfc, self.pfFe.L_pfc)
                 self.problem_pfc.solve(b_pfc, self.pfFe.SH_sol.x.petsc_vec)
+        self.pfFe.psiout.interpolate(self.pfFe.SH_sol.sub(0))

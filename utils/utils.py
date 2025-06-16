@@ -68,6 +68,28 @@ def error_L2(uh, u_ex, degree_raise=3):
     error_global = mesh.comm.allreduce(error_local, op=MPI.SUM)
     return np.sqrt(error_global)
 
+def error_L2_rel(uh, u_ex, degree_raise=3):
+    degree = uh.function_space.ufl_element().degree
+    family = uh.function_space.ufl_element().family_name
+
+    mesh = uh.function_space.mesh
+    W = functionspace(mesh, (family, degree + degree_raise,uh.ufl_shape))
+    u_W = Function(W)
+    u_W.interpolate(uh)
+    u_ex_W = Function(W)
+    if isinstance(u_ex, ufl.core.expr.Expr):
+        u_expr = Expression(u_ex, W.element.interpolation_points())
+        u_ex_W.interpolate(u_expr)
+    else:
+        u_ex_W.interpolate(u_ex)
+
+    e_W = Function(W)
+    e_W.x.array[:] = (u_W.x.array - u_ex_W.x.array)/u_W.x.array 
+
+    error = form(ufl.inner(e_W, e_W) * ufl.dx)
+    error_local = assemble_scalar(error)
+    error_global = mesh.comm.allreduce(error_local, op=MPI.SUM)
+    return np.sqrt(error_global)
 
 def Tabulate_Vals(v,sp,filename):
     dof_coords = sp.tabulate_dof_coordinates()

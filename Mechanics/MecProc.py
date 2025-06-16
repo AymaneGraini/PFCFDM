@@ -58,12 +58,12 @@ class MecProc:
     def update_UP(self,pfc_solver):
         """
             Update UP using a forward Euler scheme : 
-                Up(t+dt) = Up(t) + dt*J
+                Up(t+dt) = Up(t) + dt*J #TODO + or - ?
             with J = (alpha x vd) is the plastic rate but also 
             the current linked with the conservation of burgers vector
             Thus the Argument is the whole PFCsolver that contains J.
         """
-        self.mecFE.UP.x.array[:]+=self.sim_params.dt*pfc_solver.pfComp.J.x.array[:]  # TODO maybe petsc.axpy is much faster ...
+        self.mecFE.UP.x.array[:]=self.sim_params.dt*pfc_solver.pfComp.J.x.array[:]  # TODO maybe petsc.axpy is much faster ...
 
     def combine_UP(self):
         """
@@ -84,7 +84,9 @@ class MecProc:
 
     def Get_Divergence(self):
         self.mecComp.compute_divergence()
-
+    def Get_Curls(self):
+        self.mecComp.compute_curls()
+        
     def compute_sym(self):
         self.mecComp.compute_sym()
 

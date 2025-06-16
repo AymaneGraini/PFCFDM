@@ -120,7 +120,7 @@ class PFCProcessor():
             nabla_An = jnp.zeros((self.ny, self.nx, 2), dtype=jnp.complex64).at[:, :, 0].set(grad_x / An).at[:, :, 1].set(grad_y / An)
             holder = jnp.imag(nabla_An)
             q_field = jnp.broadcast_to(self.qs[n], (self.ny, self.nx, 2))
-            return (2 / 6) * jnp.einsum('ijk,ijl->ijkl', q_field, holder, optimize=True)
+            return -(2 / 6) * jnp.einsum('ijk,ijl->ijkl', q_field, holder, optimize=True)
         vecs = np.arange(0,len(self.qs),1)
         Qcomp = jnp.sum(jax.vmap(compute_single_q)(vecs), axis=0)
         if not self.filterQ:
@@ -144,7 +144,7 @@ class PFCProcessor():
         derivative_array = jnp.zeros((self.ny, self.nx,2,2,2)).at[:,:,0,:,:].set(grad_x).at[:,:,1,:,:].set(grad_y)
         padded_array = jnp.pad(derivative_array, ((0, 0), (0, 0), (0, 1), (0, 1), (0, 1)), mode='constant', constant_values=0)
         curl = jnp.einsum('jkl,abkil->abij', Levi,padded_array,optimize=True)
-        return curl.reshape(-1,9)[self.rev_DofMap].ravel()
+        return -curl.reshape(-1,9)[self.rev_DofMap].ravel()
 
     # @partial(jax.jit, static_argnames=['self'])
     def Analytical_gradFuq(self,Qt,Ut,amps):
@@ -164,7 +164,7 @@ class PFCProcessor():
             return  gradF_dAm
         vecs = np.arange(0,len(self.qs),1)
         TA= jnp.sum(jax.vmap(Single_vec_con)(vecs), axis=0)
-        return (2/6)*TA.imag.ravel()[self.rev_DofMap]
+        return -(2/6)*TA.imag.ravel()[self.rev_DofMap]
 
 
     def Coarse_grain(self,R):
@@ -220,7 +220,7 @@ def Compute_Q_jax(FE_psi,proc):
         q_field = jnp.broadcast_to(q, (proc.ny, proc.nx, 2))
 
         # Tensor product and scale
-        return (2 / 6) * jnp.einsum('ijk,ijl->ijkl', q_field, holder, optimize=True)
+        return -(2 / 6) * jnp.einsum('ijk,ijl->ijkl', q_field, holder, optimize=True)
 
     vecs = jnp.arange(len(proc.qs))
 
@@ -276,7 +276,7 @@ def Compute_Q_sym_jax(FE_psi,proc):
         q_field = jnp.broadcast_to(q, (proc.ny, proc.nx, 2))
 
         # Tensor product and scale
-        return (2 / 6) * jnp.einsum('ijk,ijl->ijkl', q_field, holder, optimize=True)
+        return -(2 / 6) * jnp.einsum('ijk,ijl->ijkl', q_field, holder, optimize=True)
 
     vecs = jnp.arange(len(proc.qs))
 

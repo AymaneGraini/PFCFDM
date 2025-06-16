@@ -61,6 +61,7 @@ class PfProc:
         E = fem.assemble_scalar(self.pfFe.Energyform)
         self.E_history.append(E)
         return E
+    
     def Correct(self):
         self.pfFe.correct()
 

@@ -26,14 +26,14 @@ class MecSolver :
                                         +self.mecFe.mech_params.Cx * ufl.inner(ufl.dot(v2T(self.mecFe.u_inc,2), nv), 
                                                                                ufl.dot(v2T(self.mecFe.v_inc,2), nv)) * self.mecFe.ds)
             
-            self.mecFe.L_inc = fem.form(-1.*ufl.inner(self.mecFe.alpha,tcurl(extendT(v2T(self.mecFe.v_inc,2))))*self.mecFe.dx)
+            self.mecFe.L_inc = fem.form(ufl.inner(-self.mecFe.alpha,tcurl(extendT(v2T(self.mecFe.v_inc,2))))*self.mecFe.dx)
         else :
             self.mecFe.a_inc = fem.form(ufl.inner(tcurl(self.mecFe.u_inc),tcurl(self.mecFe.v_inc))*self.mecFe.dx
                                         +ufl.inner(tdiv(self.mecFe.u_inc),tdiv(self.mecFe.v_inc))*self.mecFe.dx
                                         + self.mecFe.mech_params.Cx * ufl.inner(vdot(self.mecFe.u_inc, nv),
                                                                                 vdot(self.mecFe.v_inc, nv)) * self.mecFe.ds)
             
-            self.mecFe.L_inc = fem.form(ufl.inner(-1*self.mecFe.alpha,tcurl(self.mecFe.v_inc))*self.mecFe.dx)
+            self.mecFe.L_inc = fem.form(ufl.inner(-self.mecFe.alpha,tcurl(self.mecFe.v_inc))*self.mecFe.dx)
 
     def create_forms_U(self):
         lambda_ = self.mecFe.mech_params.lambda_
@@ -44,11 +44,13 @@ class MecSolver :
         if self.mecFe.sim_params.penalty_u:
             self.mecFe.a_u = fem.form(ufl.inner(Cel*sigma(epsilon(self.mecFe.u_e),lambda_,mu_)
                                                 +Cw*epsilon(self.mecFe.u_e), epsilon(self.mecFe.v_e )) * self.mecFe.dx )
+            
             self.mecFe.L_u = fem.form(ufl.inner(Cel*sigma(ufl.sym(self.mecFe.UP),lambda_,mu_)
                                                 +Cw*(ufl.sym(self.mecFe.UP)+ufl.sym(self.mecFe.Q)), epsilon(self.mecFe.v_e )) * self.mecFe.dx
                                                 +ufl.inner(self.mecFe.f,self.mecFe.v_e)* self.mecFe.dx)
         else:
             self.mecFe.a_u = fem.form(ufl.inner(Cel*sigma(epsilon(self.mecFe.u_e),lambda_,mu_), ufl.grad(self.mecFe.v_e )) * self.mecFe.dx )
+            
             self.mecFe.L_u = fem.form(ufl.inner(Cel*sigma(ufl.sym(self.mecFe.UP),lambda_,mu_), ufl.grad(self.mecFe.v_e )) * self.mecFe.dx
                                       +ufl.inner(self.mecFe.f,self.mecFe.v_e)* self.mecFe.dx)
     

@@ -35,7 +35,9 @@ class MecIO:
         # self.file.write_function(self.divUP,t)
         # self.file.write_function(self.sigmaUp,t)
         # self.file.write_function(self.div_C_UP,t)
-        # self.file.write_function(self.curlUP,t)
+        self.file.write_function(self.mecComp.curlUP,t)
+        self.file.write_function(self.mecComp.curlUE,t)
+        self.file.write_function(self.mecComp.curlQ,t)
         # # self.file.write_function(self.out,t)
         # self.file.write_function(self.V_pk,t)
 

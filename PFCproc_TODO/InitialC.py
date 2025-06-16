@@ -21,10 +21,10 @@ def initialize_from_burgers(qs,ps,list_defects,A,avg):
         result = 0
         for q in qs:
             inner_sum = sum(disp(q,defect,x) for defect in list_defects) # Could be disp or disp anderson
-            result += np.exp(1j*mdot(q,x) + 1j*inner_sum)
+            result += np.exp(1j*mdot(q,x) - 1j*inner_sum) #SHould this be + sum or - sum ? #TODO
         for p in ps:
             inner_sum = sum(disp(p,defect,x) for defect in list_defects) # Could be disp or disp anderson
-            result += 0.5*np.exp(1j*mdot(p,x) + 1j*inner_sum)
+            result += 0.5*np.exp(1j*mdot(p,x) - 1j*inner_sum)
         return np.real(result)
     
     return lambda x: avg+A*f(x)
