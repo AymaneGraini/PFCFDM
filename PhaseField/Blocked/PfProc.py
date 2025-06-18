@@ -47,6 +47,15 @@ class PfProc:
         print("THe average in initing is ", avg1)
         self.avg_history.append(avg1)
 
+    def Intialize_random(self,seed):
+        rng = np.random.default_rng(seed)
+        initialCpsi = lambda x : (rng.random(x.shape[1])-0.5)+self.pfc_params.avg
+        self.pfFe.psi0.interpolate(initialCpsi)
+        self.pfFe.psiout.interpolate(self.pfFe.psi0)
+        avg1= fem.assemble_scalar(fem.form(self.pfFe.psiout*self.pfFe.dx))/(self.sim_params.L*self.sim_params.H)
+        print("THe average in initing is ", avg1)
+        self.avg_history.append(avg1)
+
     def Initialize(self,f0):
         self.pfFe.psi0.interpolate(f0)
         self.pfFe.psiout.interpolate(self.pfFe.psi0)

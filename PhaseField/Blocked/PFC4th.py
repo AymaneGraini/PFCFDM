@@ -54,7 +54,7 @@ class PFC4(PFFe):
 
         self.a11    = (1/(dt*Csh)+1-r)*ufl.inner(self.psi_current,self.q)*self.dx
         self.a12    = -1.0*ufl.inner(ufl.grad(self.chi_current),ufl.grad(self.q))*self.dx+2*ufl.inner(self.chi_current,self.q)*self.dx
-        self.a13    = -1.0*ufl.inner(self._lm,self.q)*self.dx
+        self.a13    = 1.0*ufl.inner(self._lm,self.q)*self.dx
 
         self.a21    = ufl.inner(ufl.grad(self.psi_current),ufl.grad(self.v))*self.dx
         self.a22    = ufl.inner(self.chi_current,self.v)*self.dx

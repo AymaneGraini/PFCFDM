@@ -40,11 +40,12 @@ class PfComp:
             q_field = ufl.as_vector(q) 
             pref=1/(self.pfFe.Im_amps[i]**2+self.pfFe.Re_amps[i]**2)
             exp+=pref*ufl.outer(q_field,D)
-        exp*=2/len(self.pfFe.pfc_params.qs)
+        exp*=-2.0/len(self.pfFe.pfc_params.qs)
         self.QT.interpolate(fem.Expression(exp,self.pfFe.tensor_sp2.element.interpolation_points()))
         self.alphapfc.interpolate(fem.Expression(tcurl(extendT(self.QT)),self.pfFe.tensor_sp3.element.interpolation_points()))
 
     def compute_velocityPFC(self):
+        #TODO confirm
         self.indicator.interpolate(fem.Expression(ufl.sqrt(self.alphaT[0,2]**2+self.alphaT[1,2]**2),self.scalar_sp.element.interpolation_points()))
         v_exp=0
         for i,q in enumerate(self.pfFe.pfc_params.qs):
@@ -60,6 +61,7 @@ class PfComp:
         self.velocity.interpolate(fem.Expression(ufl.conditional(ufl.ge(self.indicator,1e-2),v_exp,ufl.as_vector([0,0])),self.pfFe.vector_sp2.element.interpolation_points()))
 
     def compute_velocityPFC_bis(self):
+        #TODO confirm
         self.indicator.interpolate(fem.Expression(ufl.sqrt(self.alphaT[0,2]**2+self.alphaT[1,2]**2),self.pfFe.scalar_sp.element.interpolation_points()))
         S=0
         D=0

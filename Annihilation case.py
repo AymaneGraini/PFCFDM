@@ -1,5 +1,6 @@
-import PhaseField.Mixed as Mixed
-import PhaseField.Mixed.PfProc
+import PhaseField.Blocked as Blocked
+import PhaseField.Blocked.PfProc
+import PhaseField.Blocked.PfComp
 import Mechanics
 from Simulation.Parameters import *
 from Simulation.SimIO import *
@@ -38,10 +39,10 @@ pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3),
 geometry   = GeomParams(dx=pfcparms.a0/7,
                         dy=np.sqrt(3)*pfcparms.a0/12,
                         Nx=7*50,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
-                        Ny=12*12) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
+                        Ny=12*15) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
 
 
-simparams = SimParams(1,0,True,True,1e-1,500,geometry.L,geometry.H)
+simparams = SimParams(1,0.08,True,True,1e-1,1200,geometry.L,geometry.H)
 
 
 filename  = "Annihilation"+str(simparams.dt)+"_"+str(simparams.Cw)
@@ -97,15 +98,14 @@ defects=[
 timestamps=[0]
 SH_Energy = []
 
-pfProc = Mixed.PfProc.PfProc(domain,pfcparms,simparams,file)
+pfProc = Blocked.PfProc.PfProc(domain,pfcparms,simparams,file)
 pfProc.Initialize_crystal(defects)
 pfProc.init_solver()
 pfProc.Configure_solver()
-# pfProc.get_chi()
 amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))])
 pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
 mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+
 
 # pfProc.get_SH_Energy()
 pfProc.Solve()
@@ -121,8 +121,11 @@ t2=time.time()
 
 print("Starting mecha")
 
-
+pfProc.pfComp.Compute_alpha_tilde()
+mec_proc.mecFE.alpha.x.array[:]=pfProc.pfComp.alphaT.x.array[:]*-1.0 #because alphaT from PFC is of negative sign
 mec_proc.init_solver([],[])
+
+
 mec_proc.ConfigureSolver_UPperp()
 mec_proc.ConfigureSolver_u()
 mec_proc.solveUPperp()
@@ -151,6 +154,7 @@ mechanical_dissipation=[0]
 rel_erros_history=[component_errors_rel]
 timestamps=[t]
 SH_Energy.append(pfProc.get_SH_Energy())
+avg_history=[fem.assemble_scalar(pfProc.pfFe.Avg_form)]
 
 dissipation = fem.form(ufl.inner(mec_proc.mecComp.sigmaUe,pfProc.pfComp.J)*pfProc.pfFe.dx)
 
@@ -165,7 +169,7 @@ while t<simparams.tmax:
     pfProc.pfComp.Compute_current()
     pfProc.pfComp.Compute_alpha_tilde()
     mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-    mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+    mec_proc.mecFE.alpha.x.array[:]=pfProc.pfComp.alphaT.x.array[:]*-1.0
     mec_proc.update_UP(pfProc)
     # mec_proc.solveUPperp()
     # mec_proc.combine_UP()
@@ -179,6 +183,7 @@ while t<simparams.tmax:
     component_errors = [error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)]
     erros_history.append(component_errors)
     rel_erros_history.append([error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)])
+    avg_history.append(fem.assemble_scalar(pfProc.pfFe.Avg_form))
 
     timestamps.append(t)
     if n%20==0:
@@ -194,6 +199,6 @@ while t<simparams.tmax:
 
 
 file.close()
-np.savetxt(path+"Energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy,mechanical_dissipation)),delimiter="\t")
+np.savetxt(path+"Energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy,mechanical_dissipation,avg_history)),delimiter="\t")
 np.savetxt(path+"errors_"+filename+".csv",np.column_stack((timestamps,erros_history)),delimiter="\t")
 

@@ -19,12 +19,12 @@ class MecIO:
         self.file.write_function(self.mecFe.u_out,t)
         self.file.write_function(self.mecFe.UE,t)
         self.file.write_function(self.mecComp.sigmaUe,t)
-        self.file.write_function(self.mecComp.divsUe,t)
+        # self.file.write_function(self.mecComp.divsUe,t)
 
         self.file.write_function(self.mecFe.Q,t)
         # self.file.write_function(self.Qsym,t)
         self.file.write_function(self.mecFe.alpha,t)
-        self.file.write_function(self.mecFe.UPperp,t)
+        # self.file.write_function(self.mecFe.UPperp,t)
         # self.file.write_function(self.UPpara,t)
         self.file.write_function(self.mecFe.UP,t)
         # self.file.write_function(self.U,t)
@@ -39,7 +39,7 @@ class MecIO:
         self.file.write_function(self.mecComp.curlUE,t)
         self.file.write_function(self.mecComp.curlQ,t)
         # # self.file.write_function(self.out,t)
-        # self.file.write_function(self.V_pk,t)
+        # self.file.write_function(self.mecComp.V_pk,t)
 
     def save_indicators(self,prefix: str):
         np.savetxt(prefix+self.suffix+".csv",np.column_stack((self.FSH,self.FUQ,self.L2divs,self.L2divsQ,self.avgs)),delimiter="\t")

@@ -4,12 +4,12 @@ from matplotlib.ticker import ScalarFormatter
 
 
 t=2
-for c in [1]:
+for c in [5]:
     cw=str(c)
     for t in [0,1]:
         print(cw,t)
         root="./out/Static/"
-        file = root+"Static0.1_"+cw+".h5"
+        file = root+"static0.1_"+cw+".h5"
 
         X,Y,UE11, timest = get_im_data(file,"UE",t,0)
         X,Y,UE12, timest = get_im_data(file,"UE",t,1)

@@ -34,7 +34,7 @@ mpl.rcParams['legend.loc'] = 'upper right'
 
 blue_red = LinearSegmentedColormap.from_list("blue_red", ["blue", "red"])
 
-cws=[1]
+cws=[0.0,0.02,0.05,0.1,1.0]
 colors = blue_red(np.linspace(0, 1, len(cws))) 
 figsh, ax_sh = plt.subplots(figsize=(4.5, 4))
 
@@ -51,26 +51,26 @@ figuq, axavg = plt.subplots(figsize=(4, 4))
 # figuq21, ax21 = plt.subplots(figsize=(4, 4))
 # figuq22, ax22 = plt.subplots(figsize=(4, 4))
 
-xzoom1 =230
-xzoom2 =600
-root = "./out/Static/"
-filename="Staticfrozen0.1"
+xzoom1 =400
+xzoom2 =3500
+root = "./out/Annihilation/save/"
+filename="Annihilation0.1"
 for i, cw in enumerate(cws):
     dataSH = np.loadtxt(root+"Energy_"+filename+"_"+str(cw)+".csv",delimiter="\t")
     dt = dataSH[1,0] - dataSH[0,0]
-    ax_sh.plot(dataSH[:,0]/dt,dataSH[:,1]-dataSH[0,1],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
-    axavg.plot(dataSH[:,0]/dt,dataSH[:,3],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
+    ax_sh.plot(dataSH[:,0]/dt,dataSH[:,1]-dataSH[0,1],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
+    axavg.plot(dataSH[:,0]/dt,dataSH[:,3],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
 
-    axmec.plot(dataSH[:,0]/dt,dataSH[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
+    axmec.plot(dataSH[:,0]/dt,-dataSH[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
     # axD.plot(dataSH[:,0]/dt,dataSH[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
 
     datauq = np.loadtxt(root+"errors_"+filename+"_"+str(cw)+".csv",delimiter="\t")
     l2 = np.sqrt(datauq[:,1]**2 +datauq[:,2]**2 +datauq[:,3]**2 +datauq[:,4]**2)
-    ax2.plot(datauq[:,0]/dt,l2,lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
+    ax2.plot(datauq[:,0]/dt,l2,lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
 
 
-    D = -np.gradient(dataSH[:,1],dataSH[:,0]) -0.5*cw *np.pad(np.gradient(l2,datauq[:,0]),(len(dataSH[:,1])-len(l2),0),mode='constant')+dataSH[:,2]
-    ax_totalD.plot(dataSH[:,0]/dt,D,lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i],marker="x",markersize=5)
+    D = -np.gradient(dataSH[:,1],dataSH[:,0]) -0.5*cw *np.pad(np.gradient(l2,datauq[:,0]),(len(dataSH[:,1])-len(l2),0),mode='constant')-dataSH[:,2]
+    ax_totalD.plot(dataSH[:,0]/dt,D,lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
     # ax11.plot(datauq[:,0]/dt,datauq[:,1],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
     # ax12.plot(datauq[:,0]/dt,datauq[:,2],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
     # ax21.plot(datauq[:,0]/dt,datauq[:,3],lw=0.9,label=r"$C_w={{{}}}$".format(cw),color=colors[i])
@@ -84,21 +84,24 @@ for i, cw in enumerate(cws):
 # plt.show()
 ylm = dataSH[-1,0]/dt
 
-# mark_inset(ax, axins, loc1=2, loc2=4, fc="white", ec="0.4",
-        #    linestyle='--',linewidth=0.7)
+mark_inset(ax_sh, axins, loc1=2, loc2=4, fc="white", ec="0.4",
+           linestyle='--',linewidth=0.7)
 mask = (dataSH[:,0]/dt >= xzoom1) & (dataSH[:,0]/dt <= xzoom2)
 y_zoom = dataSH[mask,1]
 
-axins.set_ylim(-76, -75.2)
+axins.set_ylim(-281, -275.2)
 # axins.set_ylim(-182, -180.5)
 ax_sh.set_xlabel(r"Iterations, $dt={{{}}} \, [-]$".format(dt),fontsize=14)    
 ax_sh.set_ylabel(r"Swift Hohenberg Energy $\mathcal{F}_{sh} -\mathcal{F}_0$",fontsize=14)
 
 ax2.set_xlabel(r"Iterations, $dt={{{}}} \, [-]$".format(dt),fontsize=14)    
 ax2.set_ylabel(r"$||\mathbf{U^e_{sym}}-\mathbf{Q_{sym}}||_{L_2}$",fontsize=14)    
+ax2.set_ylim(None,7.5)    
 
 ax_totalD.set_xlabel(r"Iterations, $dt={{{}}} \, [-]$".format(dt),fontsize=14)    
 ax_totalD.set_ylabel(r"Total Dissipation $\mathcal{D}$",fontsize=14)    
+ax_totalD.axhline(y=0,color="black",lw=0.8,ls="dashed")  
+ax_totalD.set_yscale("log")
 
 axmec.set_xlabel(r"Iterations, $dt={{{}}} \, [-]$".format(dt),fontsize=14)    
 axmec.set_ylabel(r"Plastic Dissipation $\mathcal{D}$",fontsize=14) 
@@ -128,8 +131,8 @@ formatter = ScalarFormatter(useMathText=True)
 formatter.set_powerlimits((1, 0))
 ax_sh.yaxis.set_major_formatter(formatter)
 ax_sh.set_xlim(None,ylm)
-ax_sh.axvspan(0, 250, color='royalblue', alpha=0.1) 
-axins.axvspan(0, 250, color='royalblue', alpha=0.1) 
+# ax_sh.axvspan(0, 250, color='royalblue', alpha=0.1) 
+# axins.axvspan(0, 250, color='royalblue', alpha=0.1) 
 ax2.set_xlim(None,ylm)
 
 # ax11.set_xlim(None,ylm)
@@ -138,9 +141,9 @@ ax2.set_xlim(None,ylm)
 # ax22.set_xlim(None,ylm)
 
 ax_sh.legend(frameon=False)
-ax_sh.axvline(x=250,lw=0.5,color="black",ls="dashed")
-axins.axvline(x=250,lw=0.5,color="black",ls="dashed")
-ax_sh.text(200,-20,r"Relaxtion of $\psi$ with $\mathcal{F}_{sh}$ only",rotation=90, va='center', ha='center')
+# ax_sh.axvline(x=250,lw=0.5,color="black",ls="dashed")
+# axins.axvline(x=250,lw=0.5,color="black",ls="dashed")
+# ax_sh.text(200,-20,r"Relaxtion of $\psi$ with $\mathcal{F}_{sh}$ only",rotation=90, va='center', ha='center')
 ax2.legend(frameon=False) 
 
 # ax11.legend(frameon=False) 

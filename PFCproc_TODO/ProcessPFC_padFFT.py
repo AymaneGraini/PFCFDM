@@ -96,8 +96,7 @@ class PFCProcessor():
 
 
         self.AmpKernel=jnp.fft.fft2(self.AmpKernel)
-        
-        self.AmpKernel = JGkernel_jax(self.pad_shape,self.dx,self.dy,self.a0)
+        self.AmpKernel = JGkernel_jax(self.pad_shape,self.dx,self.dy,self.a0) #TODO remove this line maybe the kernel is fft made not defined in fourier space over the paded domain  or remove all the previous definition
 
         self.filterQ = True
         kx = jnp.fft.fftfreq(self.nx,self.dx)*2*jnp.pi
@@ -128,8 +127,7 @@ class PFCProcessor():
         image_fft = jnp.fft.fft2(field_padded)
         convolved_fft = image_fft * self.AmpKernel
         convolved = jnp.fft.ifft2(convolved_fft)
-        # plt.imshow(np.absolute(convolved[start_x:start_x + self.target_shape[0],
-        #             start_y:start_y + self.target_shape[1]] ),origin='lower',cmap="s²eismic")
+        # plt.imshow(psi,origin='lower',cmap="seismic")
         # plt.show()
         return convolved[start_x:start_x + self.target_shape[0],
                     start_y:start_y + self.target_shape[1]]
@@ -138,7 +136,7 @@ class PFCProcessor():
     def Compute_Q(self,amps):
         def compute_single_q(n):
             An = amps[n]
-            grad_x = Jcompute_gradient(An, 1, self.dx)
+            grad_x = Jcompute_gradient(An, 1, self.dx) #TODO check if dx or dy
             grad_y = Jcompute_gradient(An, 0, self.dy)
             nabla_An = jnp.zeros((self.ny, self.nx, 2), dtype=jnp.complex64).at[:, :, 0].set(grad_x / An).at[:, :, 1].set(grad_y / An)
             holder = jnp.imag(nabla_An)
@@ -151,7 +149,7 @@ class PFCProcessor():
         else:
             start_x = (self.pad_shape[0] - self.target_shape[0]) // 2
             start_y = (self.pad_shape[1] - self.target_shape[1]) // 2
-            sp = JGkernel_jax(self.pad_shape,self.dx,self.dy,self.a0/4)
+            sp = JGkernel_jax(self.pad_shape,self.dx,self.dy,self.a0/4) #is this okay ? TODO
             convQ = np.zeros_like(Qcomp)
             for i in range(2):
                 for j in range(2):

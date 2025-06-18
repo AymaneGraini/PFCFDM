@@ -84,9 +84,13 @@ class MecProc:
 
     def Get_Divergence(self):
         self.mecComp.compute_divergence()
+
     def Get_Curls(self):
         self.mecComp.compute_curls()
-        
+    
+    def PK_velocity(self):
+        self.mecComp.compute_velocity()
+
     def compute_sym(self):
         self.mecComp.compute_sym()
 

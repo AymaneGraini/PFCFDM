@@ -2,8 +2,8 @@
 Performs a compressive test on sample by setting dirichlet Bcs on U
 """
 
-import PhaseField.Mixed as Mixed
-import PhaseField.Mixed.PfProc
+import PhaseField.Blocked as Blocked
+import PhaseField.Blocked.PfProc
 import Mechanics
 from Simulation.Parameters import *
 from Simulation.SimIO import *
@@ -19,7 +19,7 @@ import ufl
 from petsc4py import PETSc
 import pyvista
 from dolfinx.la import create_petsc_vector_wrap
-from PFCproc_TODO.ProcessPFC import *
+from PFCproc_TODO.ProcessPFC_padFFT import *
 from jax import vjp, jvp
 
 if pyvista.OFF_SCREEN:
@@ -41,14 +41,15 @@ pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3),
 
 geometry   = GeomParams(dx=pfcparms.a0/7,
                         dy=np.sqrt(3)*pfcparms.a0/12,
-                        Nx=7*26,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
+                        Nx=7*28,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
                         Ny=12*18) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
 
 
-simparams = SimParams(1,2,True,True,2e-1,500,geometry.L,geometry.H)
+simparams = SimParams(1,2,True,True,1e-1,1000,geometry.L,geometry.H)
 
-filename  = "Shear"+str(simparams.dt)+"_"+str(simparams.Cw)
-path = "./out/shear/"
+
+filename  = "trashPK"+str(simparams.dt)+"_"+str(simparams.Cw)
+path = "./out/shearDis/"
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, path+filename+".xdmf", "w")
 
 
@@ -89,7 +90,7 @@ xp= geometry.L/2
 yp = geometry.H/2
 
 defects=[
-    # [xp,yp,[-1*pfcparms.a0,0]]
+    [xp,yp,[-1*pfcparms.a0,0]]
 ]
 
 
@@ -98,7 +99,7 @@ defects=[
 timestamps=[0]
 SH_Energy = []
 
-pfProc = Mixed.PfProc.PfProc(domain,pfcparms,simparams,file)
+pfProc = Blocked.PfProc.PfProc(domain,pfcparms,simparams,file)
 pfProc.Initialize_crystal(defects)
 pfProc.init_solver()
 pfProc.Configure_solver()
@@ -106,25 +107,15 @@ pfProc.Configure_solver()
 amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))])
 pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
 mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
+pfProc.pfComp.Compute_alpha_tilde()
 
-pfProc.get_SH_Energy()
-pfProc.write_output(0.0)
-mec_proc.write_output(0.0)
 pfProc.Solve()
 pfProc.Correct()
-SH_Energy.append(pfProc.get_SH_Energy())
 # file.close()
 # exit()
 t=0
 n=0
 #Relaxing the core!
-while t<200:
-    t+=simparams.dt
-    pfProc.Solve()
-    # pfProc.write_output(t)
-    pfProc.Correct()
-    timestamps.append(t)
-    SH_Energy.append(pfProc.get_SH_Energy())
 
 # plt.figure(figsize=(4,4))
 # plt.plot(timestamps,SH_Energy,marker="x",lw=0.9,color="royalblue")
@@ -137,28 +128,38 @@ print("Starting mecha")
 amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))])
 pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
 mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+pfProc.pfComp.Compute_alpha_tilde()
+
+mec_proc.mecFE.alpha.x.array[:]=pfProc.pfComp.alphaT.x.array[:]*-1.0
 
 #Defining Bcs for u
 def bottom(x):
     return np.isclose(x[1], 0)
 
-def top(x):
-    return np.isclose(x[1], geometry.H)
+def right(x):
+    return np.isclose(x[0], geometry.L)
+
+def left(x):
+    return np.isclose(x[0], 0)
 
 bottom_dofs = fem.locate_dofs_geometrical(mec_proc.mecFE.vector_sp2_quad, bottom)
 V_ux, map =  mec_proc.mecFE.vector_sp2_quad.sub(0).collapse()
-top_dofs_ux = fem.locate_dofs_geometrical(( mec_proc.mecFE.vector_sp2_quad.sub(0), V_ux), top)
+left_dofs_ux = fem.locate_dofs_geometrical(( mec_proc.mecFE.vector_sp2_quad.sub(0), V_ux), left)
+right_dofs_ux = fem.locate_dofs_geometrical(( mec_proc.mecFE.vector_sp2_quad.sub(0), V_ux), right)
 uD_x = fem.Function(V_ux)
-uD_x.interpolate(lambda x : x[0]*0+50)
+deltax = geometry.L/20
+uD_x.interpolate(lambda x : x[1]*deltax/geometry.L)
 bcs = [
     fem.dirichletbc(np.zeros((2,)), bottom_dofs, mec_proc.mecFE.vector_sp2_quad),
-    fem.dirichletbc(uD_x, top_dofs_ux,  mec_proc.mecFE.vector_sp2_quad.sub(1)),
+    fem.dirichletbc(uD_x, left_dofs_ux,  mec_proc.mecFE.vector_sp2_quad.sub(0)),
+    fem.dirichletbc(uD_x, right_dofs_ux,  mec_proc.mecFE.vector_sp2_quad.sub(0)),
 ]
 
 
 
 mec_proc.init_solver([],bcs)
+
+
 mec_proc.ConfigureSolver_UPperp()
 mec_proc.ConfigureSolver_u()
 mec_proc.solveUPperp()
@@ -166,57 +167,75 @@ mec_proc.combine_UP()
 mec_proc.solveU()
 mec_proc.extract_UE()
 mec_proc.compute_sym()
+mec_proc.Get_Stress()
+mec_proc.Get_Curls()
+# mec_proc.PK_velocity()
 
 pfProc.write_output(t)
 
 mec_proc.write_output(t)
 
+# file.close()
+# exit()
 component_errors = [
     error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i))
     for i in range(4)
 ]
-erros_history=[component_errors]
-timestamps2=[t]
+component_errors_rel = [
+    error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i))
+    for i in range(4)
+]
 
-############################
-########## correct for Q ##########
-############################
+erros_history=[component_errors]
+mechanical_dissipation=[0]
+rel_erros_history=[component_errors_rel]
+
+timestamps=[t]
+SH_Energy.append(pfProc.get_SH_Energy())
+avg_history=[fem.assemble_scalar(pfProc.pfFe.Avg_form)]
+
+dissipation = fem.form(ufl.inner(mec_proc.mecComp.sigmaUe,pfProc.pfComp.J)*pfProc.pfFe.dx)
 
 while t<simparams.tmax:
     t+=simparams.dt
     pfProc.pfFe.dFQW.x.array[:] = jax_computegradFuq_sym(pfProc.pfFe.psiout.x.array,mec_proc.mecFE.UEsym.x.array,Proc)
     pfProc.Solve()
     pfProc.Correct()
-    timestamps.append(t)
     SH_Energy.append(pfProc.get_SH_Energy())
     amps= jnp.array([Proc.C_Amp(jnp.array(pfProc.pfFe.psiout.x.array),i) for i in range(len(pfcparms.qs))]) 
     pfProc.pfComp.update_cAmps(amps, Proc.rev_DofMap)
-    pfProc.pfComp.Compute_alpha_tilde()
     pfProc.pfComp.Compute_current()
+    pfProc.pfComp.Compute_alpha_tilde()
     mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-    mec_proc.mecFE.alpha.x.array[:]=Proc.Compute_alpha(mec_proc.mecFE.Q.x.array)
+    mec_proc.mecFE.alpha.x.array[:]=pfProc.pfComp.alphaT.x.array[:]*-1.0
     mec_proc.update_UP(pfProc)
     # mec_proc.solveUPperp()
     # mec_proc.combine_UP()
     mec_proc.solveU()
     mec_proc.extract_UE()  
     mec_proc.compute_sym()
+    mec_proc.Get_Curls()
+    mec_proc.Get_Stress()
 
+    mechanical_dissipation.append(fem.assemble_scalar(dissipation))
     component_errors = [error_L2(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)]
     erros_history.append(component_errors)
-    timestamps2.append(t)
-    # pfProc.write_output(t)
-    # mec_proc.write_output(t)
+    rel_erros_history.append([error_L2_rel(mec_proc.mecFE.UEsym.sub(i), mec_proc.mecComp.Qsym.sub(i)) for i in range(4)])
+    avg_history.append(fem.assemble_scalar(pfProc.pfFe.Avg_form))
+
+    timestamps.append(t)
+    if n%100==0:
+        pfProc.write_output(t)
+        mec_proc.write_output(t)
     print("t= ", t) 
     if np.isnan(pfProc.pfFe.psiout.x.array).all():
         print("Psi diverged")
         break
-
-mec_proc.mecFE.Q.x.array[:]=Proc.Compute_Q(amps)
-pfProc.write_output(t)
-mec_proc.write_output(t)
+    n+=1
+# pfProc.write_output(t)
+# mec_proc.write_output(t)
 
 
 file.close()
-np.savetxt(path+"SG_energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy)),delimiter="\t")
-np.savetxt(path+"errors_"+filename+".csv",np.column_stack((timestamps2,erros_history)),delimiter="\t")
+np.savetxt(path+"Energy_"+filename+".csv",np.column_stack((timestamps,SH_Energy,mechanical_dissipation,avg_history)),delimiter="\t")
+np.savetxt(path+"errors_"+filename+".csv",np.column_stack((timestamps,erros_history)),delimiter="\t")

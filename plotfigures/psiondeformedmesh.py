@@ -51,54 +51,58 @@ def get_im_data(filename,fieldname,ti,comp=None):
 
 
 # ---- Step 1: Read the mesh and field data from the XDMF file ----
-file   = "./out/shear_nodislocation/Shear_dispadfft0.2_1.xdmf"
-fileh5 = "./out/shear_nodislocation/Shear_dispadfft0.2_1.h5"
+file   = "./out/Annihilation/Annihilation0.1_0.0.xdmf"
+fileh5 = "./out/Annihilation/Annihilation0.1_0.0.h5"
 with XDMFFile(MPI.COMM_WORLD, file, "r") as xdmf:
     domain =  xdmf.read_mesh()
 
 
 
+original_coords = domain.geometry.x.copy()
+for t in range(601):
+    X,Y,Psi, timest,Map = get_im_data(fileh5,"Psi",t,comp=None)
+    X,Y,ux, timest,Map = get_im_data(fileh5,"u",t,comp=0)
+    X,Y,uy, timest,Map = get_im_data(fileh5,"u",t,comp=1)
+
+    mesh_coords = domain.geometry.x
+    Map     = np.lexsort((mesh_coords[:, 0], mesh_coords[:, 1]))
 
 
-X,Y,Psi, timest,Map = get_im_data(fileh5,"Psi",2,comp=None)
-X,Y,ux, timest,Map = get_im_data(fileh5,"u",2,comp=0)
-X,Y,uy, timest,Map = get_im_data(fileh5,"u",2,comp=1)
+    rev_DofMap = np.empty_like(Map)
 
-mesh_coords = domain.geometry.x
-Map     = np.lexsort((mesh_coords[:, 0], mesh_coords[:, 1]))
+    rev_DofMap = rev_DofMap[Map] = np.arange(len(Map))
 
+    elem       = basix.ufl.element("Lagrange", domain.basix_cell(), 1)
+    Vs_P2      = basix.ufl.element("Lagrange", domain.basix_cell(), 1, shape=(2,))
+    main_space = fem.functionspace(domain, elem)
+    vectorspace = fem.functionspace(domain, Vs_P2)
 
-rev_DofMap = np.empty_like(Map)
-
-rev_DofMap = rev_DofMap[Map] = np.arange(len(Map))
-
-elem       = basix.ufl.element("Lagrange", domain.basix_cell(), 1)
-Vs_P2      = basix.ufl.element("Lagrange", domain.basix_cell(), 1, shape=(2,))
-main_space = fem.functionspace(domain, elem)
-vectorspace = fem.functionspace(domain, Vs_P2)
-
-psi_func =  fem.Function(main_space,name="Psi")
-u =  fem.Function(vectorspace,name="u")
+    psi_func =  fem.Function(main_space,name="Psi")
+    u =  fem.Function(vectorspace,name="u")
 
 
 
-u_flat = np.empty((ux.size + uy.size,), dtype=ux.dtype)
-u_flat[0::2] = ux
-u_flat[1::2] = uy
-u.x.array[:] = u_flat
+    u_flat = np.empty((ux.size + uy.size,), dtype=ux.dtype)
+    u_flat[0::2] = ux
+    u_flat[1::2] = uy
+    u.x.array[:] = u_flat
 
-psi_func.x.array[:] = Psi[:,0]
+    psi_func.x.array[:] = Psi[:,0]
 
-print("dim ",domain.geometry.dim)
-domain.geometry.x[:, :domain.geometry.dim] += u.x.array.reshape((-1, domain.geometry.dim))*5
+    domain.geometry.x[:, :domain.geometry.dim]= original_coords[:, :domain.geometry.dim] + u.x.array.reshape((-1, domain.geometry.dim)) *1
 
-cells, types, x = plot.vtk_mesh(domain)
-grid = pv.UnstructuredGrid(cells, types, x)
 
-grid.point_data["psi"] = psi_func.x.array
-grid.set_active_scalars("psi")
-plotter = pv.Plotter(window_size=(750, 400))
-plotter.add_mesh(grid, scalars="psi", cmap="seismic", show_edges=False)
-# plotter.add_scalar_bar("psi")
-plotter.view_xy()
-plotter.show()
+    cells, types, x = plot.vtk_mesh(domain)
+    
+    grid = pv.UnstructuredGrid(cells, types, x)
+
+    grid.point_data["psi"] = psi_func.x.array
+    grid.set_active_scalars("psi")
+    plotter = pv.Plotter(window_size=(750, 400),off_screen=True)
+    plotter.add_mesh(grid, scalars="psi", cmap="seismic", show_edges=False)
+    plotter.view_xy()
+    plotter.reset_camera()
+    plotter.camera.zoom(1.5)
+    plotter.screenshot("./out/Annihilation/png/psi_plot"+str(t)+".png")
+    plotter.close()
+# plotter.show()

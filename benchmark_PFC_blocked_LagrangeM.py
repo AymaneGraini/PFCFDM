@@ -32,7 +32,7 @@ domain = mesh.create_rectangle(comm, [(0.0, 0), (geometry.L, geometry.H)], [geom
 
 
 
-simparams= SimParams(1,0,False,False,1e-1,10,geometry.L,geometry.H)
+simparams= SimParams(1,0,False,False,1e-1,100,geometry.L,geometry.H)
 
 
 
@@ -45,14 +45,15 @@ defects=[
 
 
 
-filename="PFblockedtest"
+filename="PFrandomNoise"
 
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "./out/benchmark/"+filename+".xdmf", "w")
 file.write_mesh(domain)
 
 
 pfProc = Blocked.PfProc.PfProc(domain,pfcparms,simparams,file)
-pfProc.Initialize_crystal(defects)
+pfProc.Intialize_random(42)
+
 avg_form = fem.form((1/(simparams.L*simparams.H))*pfProc.pfFe.psi0*pfProc.pfFe.dx)
 
 pfProc.write_output(0.0)
@@ -75,8 +76,9 @@ while t<simparams.tmax:
     t+=simparams.dt
     pfProc.Solve()
     pfProc.Correct()
-    pfProc.write_output(t)
-    avgs.append(fem.assemble_scalar(avg_form))
+    if n%10 ==0:
+        pfProc.write_output(t)
+        avgs.append(fem.assemble_scalar(avg_form))
 
     # print('now t= ',t)
     n+=1
@@ -84,5 +86,6 @@ t2 =time.time()
 print("Blocked solved in ",t2-t1)
 file.close()
 # print(avgs)
-# plt.plot(avgs)
-# plt.show()
+plt.plot(avgs)
+plt.ylim(-0.6,0)
+plt.show()

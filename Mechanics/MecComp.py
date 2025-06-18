@@ -76,6 +76,7 @@ class MecComp:
             Compute the divergence of both stresses
             coming from self.compute_stresses()
         """
+
         self.divsUe.interpolate(fem.Expression(ufl.div(self.sigmaUe), self.mecFE.vector_sp2.element.interpolation_points()))
         self.divsQ.interpolate(fem.Expression(ufl.div(self.sigmaQ), self.mecFE.vector_sp2.element.interpolation_points()))
 
@@ -85,8 +86,17 @@ class MecComp:
             Given the current alpha and sigma
             generates a vector field.
         """
+        Cw      = self.sim_params.Cw
+        e=5
         i, j,k, l = ufl.indices(4)
-        V_pk_ufl = ufl.as_vector(extendT(self.sigmaUe)[i,k]*self.mecFE.alpha[k,j]*perm[i,j,l],(l,))
+        # V_pk_ufl = V_pk_ufl = ufl.as_vector(tuple(
+        #         (extendT(self.sigmaUe)[i,k] +Cw*ufl.transpose(extendT(self.mecFE.UE))[i,k]-Cw*ufl.transpose(extendT(self.mecFE.Q))[i,k]) * self.mecFE.alpha[k,j] * perm[i,j,l]
+        #         for l in range(3)  
+        #     ))
+        V_pk_ufl = V_pk_ufl = ufl.as_vector(tuple(
+                (extendT(self.sigmaUe)[i,k] + e*ufl.transpose(tcurl(self.mecFE.alpha))[i,k]) * self.mecFE.alpha[k,j] * perm[i,j,l]
+                for l in range(3)  
+            ))
         self.V_pk.interpolate(fem.Expression(V_pk_ufl, self.mecFE.vector_sp3.element.interpolation_points()))
 
     def Compute_Epsilon_Psi(self,pfcSolver):
