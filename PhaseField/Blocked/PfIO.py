@@ -1,3 +1,7 @@
+"""
+A class, used to write output in XDMF
+Also writes different relevant indicators, see below.
+"""
 import dolfinx.io
 from .PfFe import *
 from .PfComp import *
@@ -5,7 +9,7 @@ import numpy as np
 
 class PfIO:
     """
-        A Mechanics related class, used to write output in XDMF
+        A class, used to write output in XDMF
         Also writes different relevant indicators, see below.
     """
     def __init__(self,
@@ -13,6 +17,15 @@ class PfIO:
                  pfComp: PfComp,
                  file : dolfinx.io.XDMFFile
                  ):
+        
+        """
+        Initializes the PfIO class.
+
+        Args:
+            pfFe (PFFe): An instance of the PFFe class containing phase field equations.
+            pfComp (PfComp): An instance of the PfComp class containing auxiliary parameters.
+            file (dolfinx.io.XDMFFile): The XDMF file to which output will be written.  
+        """
         self.file = file
         self.pfFe=pfFe
         self.pfComp=pfComp
@@ -20,10 +33,16 @@ class PfIO:
 
 
     def write_output(self,t):
+        """
+        Writes the output to the XDMF file at time t.
+
+        Args:
+            t (float): The current time step for which the output is written.
+        """
         self.file.write_function(self.pfFe.psiout,t)
         self.file.write_function(self.pfFe.dFQW,t)
         self.file.write_function(self.pfComp.alphaT,t)
-        # self.file.write_function(self.pfComp.J,t)
+        self.file.write_function(self.pfComp.J,t)
         # self.file.write_function(self.velocity,t)
         # self.file.write_function(self.micro_sigma,t)
         # self.file.write_function(self.micro_sigma_avg,t)

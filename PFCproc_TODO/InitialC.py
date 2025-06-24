@@ -1,7 +1,15 @@
 import numpy as np
 
-def initialize_from_burgers(qs,ps,list_defects,A,avg):
-    def mdot(q,x):
+def initialize_from_burgers(qs:np.ndarray,ps:np.ndarray,list_defects:np.ndarray,A:float,avg:float) -> function:
+    """
+    Creates a lambda function that computes :math:psi(x) for a given x
+
+    """
+    def mdot(q:np.ndarray,x:np.ndarray)->float:
+        """
+        Dot product between 2 ndarrays
+        A
+        """
         return q[0]*x[0]+q[1]*x[1]
 
     def disp(q,defect,x):
@@ -9,6 +17,9 @@ def initialize_from_burgers(qs,ps,list_defects,A,avg):
         return (1/(2*np.pi))*mdot(q,bs)*np.arctan2((x[1]-yp),(x[0]-xp))
 
     def disp_Anderson_edge(q,defect,x):
+        """Displacement field coming from elastic theory of dislocation
+
+        """
         xp,yp,bs=defect
         v=1/4.
         u=np.array([

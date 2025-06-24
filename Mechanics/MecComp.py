@@ -1,3 +1,10 @@
+"""
+Mechanical Computation class for computing auxiliary fields in a mechanical simulation.
+This class computes fields that are not directly part of the variational formulation 
+such as stresses, curls, divergences, velocities, and strains.
+This module is part of a larger simulation framework and relies on the MecFE class
+"""
+
 from Simulation.Parameters import *
 import dolfinx.fem as fem
 import ufl
@@ -8,6 +15,9 @@ class MecComp:
     """
         A class to compute auxiliary fields doesn't appear directly in 
         the variational formulation but are used for post-processing
+
+        Args:
+            mecFE (MecFE): An instance of the MecFE class that contains the finite element spaces and other parameters.
     """
     def __init__(self,
                  mecFE : MecFE):
@@ -39,20 +49,29 @@ class MecComp:
         self.curlQ   = fem.Function(mecFE.tensor_sp3,name="curlQ")
 
     def compute_sym(self):
+        """
+            Compute the symmetric part of the fields
+            :math:`sym(\\mathbf{U_e})` and :math:`sym(\\mathbf{Q})`
+        """
         self.mecFE.UEsym.interpolate(fem.Expression(ufl.sym(self.mecFE.UE),self.mecFE.tensor_sp2.element.interpolation_points()))
         self.Qsym.interpolate(fem.Expression(ufl.sym(self.mecFE.Q),self.mecFE.tensor_sp2.element.interpolation_points()))
 
     def compute_curls(self):
+        """
+            Compute the curl of the fields :math:`\\nabla \\times \\mathbf{U_e}`,
+            :math:`\\nabla \\times \\mathbf{U_p}` and :math:`\\nabla \\times \\mathbf{Q}`
+        """
         self.curlUE.interpolate(fem.Expression(tcurl(extendT(self.mecFE.UE)),self.mecFE.tensor_sp3.element.interpolation_points()))
         self.curlUP.interpolate(fem.Expression(tcurl(extendT(self.mecFE.UP)),self.mecFE.tensor_sp3.element.interpolation_points()))
         self.curlQ.interpolate(fem.Expression(tcurl(extendT(self.mecFE.Q)),self.mecFE.tensor_sp3.element.interpolation_points()))
 
     def compute_stresses(self):
         """
-            Compute the stress due to Q as C:sym(Q)
+            Compute the stress due to :math:`\\mathbf{Q}` as :math:`\\mathbb{C}:sym\\mathbf{Q}`
             and the elastic stress either:
-                non Coupled: C:sym(Ue) 
-                or Coupled : C:sym(Ue) + Cw*sym(Ue-Q)
+                un-Coupled: :math:`\\mathbb{C}:sym(\\mathbf{U_e})`
+                or Coupled : :math:`\\mathbb{C}:sym(\\mathbf{U_e}) + C_w \\, sym(\\mathbf{U_e}-\\mathbf{Q})`
+            Results are stored in self.sigmaUe and self.sigmaQ
         """
         lambda_ = self.mech_params.lambda_
         mu_     = self.mech_params.mu
@@ -73,8 +92,11 @@ class MecComp:
     
     def compute_divergence(self):
         """
-            Compute the divergence of both stresses
-            coming from self.compute_stresses()
+            Compute the divergence of both stresses  :math:`\\mathbf{div}(\sigma_{U_e})` and :math:`\\mathbf{div}(\sigma_Q)`
+            coming from self.compute_stresses() 
+
+            Results are stored in self.divsUe and self.divsQ
+           
         """
 
         self.divsUe.interpolate(fem.Expression(ufl.div(self.sigmaUe), self.mecFE.vector_sp2.element.interpolation_points()))
@@ -82,9 +104,13 @@ class MecComp:
 
     def compute_velocity(self):
         """
-            Compute the classical Peach-Khoeler force
+            Compute the classical Peach-Khoeler force without considering the coupling term.
+            The Peach-Khoeler force is given by the equation:
+            :math:`\\mathbf{V}_{pk} = (\sigma_{e} \cdot \\alpha)^t:\\mathbf{X}`
+            where :math:`\sigma_{e}` is the stress due to the elastic deformation, and :math:`{X}` is the 3rd order Levi-Civita tensor.
             Given the current alpha and sigma
-            generates a vector field.
+
+            Generates a vector field stored in self.V_pk
         """
         Cw      = self.sim_params.Cw
         e=5

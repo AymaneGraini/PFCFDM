@@ -53,6 +53,11 @@ class PFC6(PFFe):
 
             self.L_pfc =fem.form(ufl.inner(self.psi0,self.u)*self.dx+(ufl.inner(self.psi0**3+Cw*self.dFQW,self.v)*self.dx))
 
+        self.Energyform = fem.form(((1/2)*(1-r)*self.psi0**2+(1/4)*self.psi0**4+
+                                    (1/2)*self.chi0**2-ufl.inner(ufl.grad(self.psi0),ufl.grad(self.psi0)))
+                                    *self.dx)
+        self.Avg_form = fem.form((1/(self.sim_params.L*self.sim_params.H))*self.SH_sol.sub(0)*self.dx)
+
     def correct(self):
         self.zeta0.x.array[:] =self.SH_sol.x.array
         self.SH_sol.x.scatter_forward()

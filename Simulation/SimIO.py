@@ -21,6 +21,7 @@ def write_sim_settings(filename, note=None, **params):
     Parameters:
         filename (str): The path to the output file.
         **params: Keyword arguments where each value is expected to be a dataclass.
+        
     # TODO Add a example call
     """
     data = {}

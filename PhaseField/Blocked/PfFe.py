@@ -1,3 +1,4 @@
+from abc import abstractmethod
 import numpy as np
 import dolfinx
 import basix
@@ -29,7 +30,7 @@ class PFFe:
             It doesn't contain auxiliary fields such as the current, the amplitudes, distortion
 
             This is an abstract class "Interface" that needs to be implemented
-            depending on the model
+            depending on the model.
         """
                 
         self.domain     = domain
@@ -76,4 +77,29 @@ class PFFe:
         self.phi_i_intg = fem.assemble_vector(fem.form((1/(self.sim_params.L*self.sim_params.H))*ufl.TestFunction(self.scalar_sp) * ufl.dx))
         self.b_basis.x.array[:] = self.phi_i_intg.array.copy()
         self.b_basis_norm = np.dot(self.phi_i_intg.array, self.phi_i_intg.array)
+    
+    @abstractmethod
+    def create_main_forms(self):
+        """
+            Creates the forms for the phase field model.
+            This method should be implemented in each model separately.
+        """
+        raise NotImplementedError("This method should be implemented in the derived class.")
+
+    @abstractmethod
+    def create_auxiliary_forms(self):
+        """
+            Creates the auxiliary form to compute the weak laplacan form a given psi, to compute the swift hohenberg energy, and  to compute the average of psi.
+        """
+        raise NotImplementedError("This method should be implemented in the derived class.")
+
+
+    @abstractmethod
+    def correct(self):
+        """
+            Corrects the psiout function by adding the correction term.
+        This method should be implemented in each model separately.
+        """
+        raise NotImplementedError("This method should be implemented in the derived class.")
+
    
