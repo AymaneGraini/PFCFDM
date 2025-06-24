@@ -170,27 +170,40 @@ class PFCProcessorEXT():
             jnp.ndarray: The complex amplitude of the Fourier mode i. in  the shape of the target shape. and ordered as a meshgrid.
             it needs to be flattened out an reordered to be used in dolfinx.
         """
-        #op is called as a flattened out ndarray coming from dolfinx
-        psi = jnp.array(op[self.DofMap].reshape(self.target_shape)) # Reorder the input and reshape to the target shape
+        #Step 1: Reshape and demodulate the input field
+        psi = jnp.array(op[self.DofMap].reshape(self.target_shape))
 
-        # pad the field to the padded shape
+        # Step 2: Pad the field
         start_x = (self.pad_shape[0] - self.target_shape[0]) // 2
         start_y = (self.pad_shape[1] - self.target_shape[1]) // 2
 
-        field_padded = np.zeros(self.pad_shape,dtype=np.complex64)
+        field_padded = jnp.zeros(self.pad_shape, dtype=jnp.complex64)
+        field_padded = field_padded.at[start_x:start_x + self.target_shape[0],
+                               start_y:start_y + self.target_shape[1]].set(psi * self.FF[i])
 
-        field_padded[start_x:start_x + self.target_shape[0],
-                    start_y:start_y + self.target_shape[1]] = psi*self.FF[i]
-        
-     
-        # Compute the Fourier transform of the padded field
-        # and convolve it with the amplitude kernel in Fourier space
+
+        # Step 3: Convolve via FFT
         image_fft = jnp.fft.fft2(field_padded)
         convolved_fft = image_fft * self.AmpKernel
         convolved = jnp.fft.ifft2(convolved_fft)
 
-        return convolved[start_x:start_x + self.target_shape[0],
-                    start_y:start_y + self.target_shape[1]]
+        # Step 4: NORMALIZATION
+        # Make a padded mask of ones in the shape of the field
+        mask = jnp.zeros(self.pad_shape, dtype=jnp.float32)
+        mask = mask.at[start_x:start_x + self.target_shape[0],
+               start_y:start_y + self.target_shape[1]].set(1.0)
+
+
+        mask_fft = jnp.fft.fft2(mask)
+        norm_fft = mask_fft * jnp.abs(self.AmpKernel)
+        norm = jnp.fft.ifft2(norm_fft)
+
+        # Step 5: Normalize the result
+        normalized = convolved / (norm + 1e-8)  # avoid divide-by-zero
+
+        # Step 6: Crop back to original size
+        return normalized[start_x:start_x + self.target_shape[0],
+                        start_y:start_y + self.target_shape[1]]
         
     # @partial(jax.jit, static_argnames=['self'])
     def Compute_Q(self,amps) -> jnp.ndarray:
@@ -225,16 +238,42 @@ class PFCProcessorEXT():
             # and return the filtered result
             start_x = (self.pad_shape[0] - self.target_shape[0]) // 2
             start_y = (self.pad_shape[1] - self.target_shape[1]) // 2
-            sp = JGkernel_jax(self.pad_shape,self.dx,self.dy,self.a0/4) #is this okay ? TODO
-            convQ = np.zeros_like(Qcomp)
+            sx, sy = start_x, start_y
+            tx, ty = self.target_shape                        
+
+            # --- kernel in Fourier space -------------------------------------------------
+            # make sure JGkernel_jax already returns a jnp.ndarray of shape pad_shape
+            sp = JGkernel_jax(self.pad_shape, self.dx, self.dy, self.a0 / 4)
+
+            # --- allocate output in JAX --------------------------------------------------
+            convQ = jnp.zeros_like(Qcomp)                    # Qcomp should be jnp already
+
+            # --- one-time normalisation denominator --------------------------------------
+            mask = jnp.zeros(self.pad_shape, dtype=jnp.float32)
+            mask = mask.at[sx:sx+tx, sy:sy+ty].set(1.0)
+
+            norm_fft  = jnp.fft.fft2(mask) * jnp.abs(sp)     # |kernel| → real weights
+            norm_full = jnp.fft.ifft2(norm_fft).real         # back to real space
+            norm_crop = norm_full[sx:sx+tx, sy:sy+ty]        # crop to field size
+
+            # --- loop over tensor components --------------------------------------------
             for i in range(2):
                 for j in range(2):
-                    field_padded = np.zeros(self.pad_shape,dtype=np.complex64)
-                    field_padded[start_x:start_x + self.target_shape[0],
-                                        start_y:start_y + self.target_shape[1]] = Qcomp[:,:,i,j]
-                    fft_Q = jnp.fft.fft2(field_padded)
-                    convQ[:,:,i,j] = jnp.fft.ifft2(fft_Q*sp, axes=(0, 1)).real[start_x:start_x + self.target_shape[0],
-                                        start_y:start_y + self.target_shape[1]]
+
+                    # pad Qcomp[:,:,i,j] into the large array -----------------------------
+                    field_padded = jnp.zeros(self.pad_shape, dtype=jnp.complex64)
+                    field_padded = field_padded.at[sx:sx+tx, sy:sy+ty].set(Qcomp[:, :, i, j])
+
+                    # FFT → multiply by kernel → IFFT ------------------------------------
+                    fft_Q   = jnp.fft.fft2(field_padded)
+                    conv_fft = fft_Q * sp
+                    conv_full = jnp.fft.ifft2(conv_fft)      # complex result, shape pad_shape
+                    conv_crop = conv_full[sx:sx+tx, sy:sy+ty].real
+
+                    # normalise & write back ---------------------------------------------
+                    conv_norm = conv_crop / (norm_crop + 1e-8)
+                    convQ = convQ.at[:, :, i, j].set(conv_norm)
+
             return convQ.reshape(-1,4)[self.rev_DofMap].ravel()
 
 
@@ -317,24 +356,26 @@ def Compute_Q_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray:
         f = lambda x, y: jnp.exp(-1j * (q[0] * x + q[1] * y))
         FF = f(proc.X, proc.Y)
 
-        start_x = (proc.pad_shape[0] - proc.target_shape[0]) // 2
-        start_y = (proc.pad_shape[1] - proc.target_shape[1]) // 2
+        sx = (proc.pad_shape[0] - proc.target_shape[0]) // 2      # start_x
+        sy = (proc.pad_shape[1] - proc.target_shape[1]) // 2      # start_y
+        tx, ty = proc.target_shape                                 # shorthand
 
-        field_padded = jnp.zeros(proc.pad_shape,dtype=np.complex64)
+        field_padded = jnp.zeros(proc.pad_shape, dtype=jnp.complex64)
+        field_padded = field_padded.at[sx:sx+tx, sy:sy+ty].set(psi * FF)
 
-        field_padded= field_padded.at[start_x:start_x + proc.target_shape[0],
-                    start_y:start_y + proc.target_shape[1]].set(psi*FF)
-        
-     
+        image_fft      = jnp.fft.fft2(field_padded)
+        convolved_fft  = image_fft * proc.AmpKernel
+        convolved_full = jnp.fft.ifft2(convolved_fft)
 
-        image_fft = jnp.fft.fft2(field_padded)
-        convolved_fft = image_fft * proc.AmpKernel
-        convolved = jnp.fft.ifft2(convolved_fft)
+        mask = jnp.zeros(proc.pad_shape, dtype=jnp.float32)
+        mask = mask.at[sx:sx+tx, sy:sy+ty].set(1.0)
 
-        # Extract the amplitude field An from the convolved result
-        An = convolved[start_x:start_x + proc.target_shape[0],
-                    start_y:start_y + proc.target_shape[1]]
-        
+        den_fft   = jnp.fft.fft2(mask) * jnp.abs(proc.AmpKernel)
+        den_full  = jnp.fft.ifft2(den_fft).real
+        den_crop  = den_full[sx:sx+tx, sy:sy+ty]         
+
+        An = convolved_full[sx:sx+tx, sy:sy+ty] / (den_crop + 1e-8)
+                
 
         # Approximate the gradient using jnp.gradient 
         grad_x = jnp.gradient(An, proc.dx, axis=1)
@@ -362,21 +403,45 @@ def Compute_Q_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray:
     #Filter Q with a Gaussian kernel in Fourier space
     start_x = (proc.pad_shape[0] - proc.target_shape[0]) // 2
     start_y = (proc.pad_shape[1] - proc.target_shape[1]) // 2
-    sp = JGkernel_jax(proc.pad_shape,proc.dx,proc.dy,proc.a0/4)
-    convQ = jnp.zeros_like(Qcomp)
+    sx, sy = start_x, start_y
+    tx, ty = proc.target_shape                        
 
+    # --- kernel in Fourier space -------------------------------------------------
+    # make sure JGkernel_jax already returns a jnp.ndarray of shape pad_shape
+    sp = JGkernel_jax(proc.pad_shape, proc.dx, proc.dy, proc.a0 / 4)
+
+    # --- allocate output in JAX --------------------------------------------------
+    convQ = jnp.zeros_like(Qcomp)                    # Qcomp should be jnp already
+
+    # --- one-time normalisation denominator --------------------------------------
+    mask = jnp.zeros(proc.pad_shape, dtype=jnp.float32)
+    mask = mask.at[sx:sx+tx, sy:sy+ty].set(1.0)
+
+    norm_fft  = jnp.fft.fft2(mask) * jnp.abs(sp)     # |kernel| → real weights
+    norm_full = jnp.fft.ifft2(norm_fft).real         # back to real space
+    norm_crop = norm_full[sx:sx+tx, sy:sy+ty]        # crop to field size
+
+    # --- loop over tensor components --------------------------------------------
     for i in range(2):
         for j in range(2):
-                    field_padded = jnp.zeros(proc.pad_shape,dtype=np.complex64)
-                    field_padded= field_padded.at[start_x:start_x + proc.target_shape[0],
-                                        start_y:start_y + proc.target_shape[1]].set(Qcomp[:,:,i,j])
-                    fft_Q = jnp.fft.fft2(field_padded)
-                    convQ = convQ.at[:,:,i,j].set(jnp.fft.ifft2(fft_Q*sp, axes=(0, 1)).real[start_x:start_x + proc.target_shape[0],
-                                        start_y:start_y + proc.target_shape[1]])
+
+            # pad Qcomp[:,:,i,j] into the large array -----------------------------
+            field_padded = jnp.zeros(proc.pad_shape, dtype=jnp.complex64)
+            field_padded = field_padded.at[sx:sx+tx, sy:sy+ty].set(Qcomp[:, :, i, j])
+
+            # FFT → multiply by kernel → IFFT ------------------------------------
+            fft_Q   = jnp.fft.fft2(field_padded)
+            conv_fft = fft_Q * sp
+            conv_full = jnp.fft.ifft2(conv_fft)      # complex result, shape pad_shape
+            conv_crop = conv_full[sx:sx+tx, sy:sy+ty].real
+
+            # normalise & write back ---------------------------------------------
+            conv_norm = conv_crop / (norm_crop + 1e-8)
+            convQ = convQ.at[:, :, i, j].set(conv_norm)
     # Return the computed Q tensor, flattened out and reordered to match the DofMap in dolfinx
     return convQ.reshape(-1,4)[proc.rev_DofMap].ravel()
 
-def Compute_Q_sym_jax(FE_psi,proc):
+def Compute_Q_sym_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray:
     """
         Computes sym(Q) based on psi using Jax:
         FE_psi is un unordered array coming for dolfinx. It needs to be reordered and reshaped into meshgrid of the target shape.
@@ -386,10 +451,14 @@ def Compute_Q_sym_jax(FE_psi,proc):
             FE_psi (jnp.ndarray): Unordered flat array of psi values from dolfinx
             proc (PFCProcessor): Instance of PFCProcessor containing processing parameters and order from FE to FFT.
     """
+
+    # Reorder and reshape FE_psi into the target shape
     psi = jnp.array(FE_psi[proc.DofMap].reshape(proc.target_shape))
+
     # Convert qs to a JAX array outside the inner function
     qs_array = jnp.array(proc.qs)
     
+    # Define a function to compute the contribution of a single q vector
     def compute_single_q(n):
         q = qs_array[n]  
 
@@ -397,34 +466,37 @@ def Compute_Q_sym_jax(FE_psi,proc):
         f = lambda x, y: jnp.exp(-1j * (q[0] * x + q[1] * y))
         FF = f(proc.X, proc.Y)
 
-        start_x = (proc.pad_shape[0] - proc.target_shape[0]) // 2
-        start_y = (proc.pad_shape[1] - proc.target_shape[1]) // 2
+        sx = (proc.pad_shape[0] - proc.target_shape[0]) // 2      # start_x
+        sy = (proc.pad_shape[1] - proc.target_shape[1]) // 2      # start_y
+        tx, ty = proc.target_shape                                 # shorthand
 
-        field_padded = jnp.zeros(proc.pad_shape,dtype=np.complex64)
-        field_padded= field_padded.at[start_x:start_x + proc.target_shape[0],
-                    start_y:start_y + proc.target_shape[1]].set(psi*FF)
-        
-     
-        # Compute the Fourier transform of the psi*e(-iqx)
-        # and convolve it with the amplitude kernel in Fourier space
-        image_fft = jnp.fft.fft2(field_padded)
-        convolved_fft = image_fft * proc.AmpKernel
-        convolved = jnp.fft.ifft2(convolved_fft)
+        field_padded = jnp.zeros(proc.pad_shape, dtype=jnp.complex64)
+        field_padded = field_padded.at[sx:sx+tx, sy:sy+ty].set(psi * FF)
 
-        # Extract the amplitude field An from the convolved result
-        An = convolved[start_x:start_x + proc.target_shape[0],
-                    start_y:start_y + proc.target_shape[1]]
+        image_fft      = jnp.fft.fft2(field_padded)
+        convolved_fft  = image_fft * proc.AmpKernel
+        convolved_full = jnp.fft.ifft2(convolved_fft)
 
-        # Approximate gradient using finite differences manually, since jnp.gradient doesn't work with tracers
+        mask = jnp.zeros(proc.pad_shape, dtype=jnp.float32)
+        mask = mask.at[sx:sx+tx, sy:sy+ty].set(1.0)
+
+        den_fft   = jnp.fft.fft2(mask) * jnp.abs(proc.AmpKernel)
+        den_full  = jnp.fft.ifft2(den_fft).real
+        den_crop  = den_full[sx:sx+tx, sy:sy+ty]         
+
+        An = convolved_full[sx:sx+tx, sy:sy+ty] / (den_crop + 1e-8)
+                
+
+        # Approximate the gradient using jnp.gradient 
         grad_x = jnp.gradient(An, proc.dx, axis=1)
         grad_y = jnp.gradient(An, proc.dy, axis=0)
 
-        # Build gradient field normalized by An
+        # Build gradient field divided by An
         nabla_An = jnp.zeros((proc.ny, proc.nx, 2), dtype=jnp.complex64)
         nabla_An = nabla_An.at[:, :, 0].set(grad_x / An)
         nabla_An = nabla_An.at[:, :, 1].set(grad_y / An)
 
-        # Imaginary part of normalized gradient field
+        # Imaginary part of gradient field / amplitude
         holder = jnp.imag(nabla_An)
 
         # Broadcast q vector across field
@@ -435,26 +507,49 @@ def Compute_Q_sym_jax(FE_psi,proc):
 
     vecs = jnp.arange(len(proc.qs))
     # Compute contributions from all modes using jax.vmap
-    # This computes the Q tensor by summing contributions from all modes shape is (ny, nx, 2, 2)
-    # Note that this is not symmetrized yet
     Qcomp = jnp.sum(jax.vmap(compute_single_q)(vecs), axis=0)
 
-    # Filter Q with a Gaussian kernel in Fourier space
+
+    #Filter Q with a Gaussian kernel in Fourier space
     start_x = (proc.pad_shape[0] - proc.target_shape[0]) // 2
     start_y = (proc.pad_shape[1] - proc.target_shape[1]) // 2
-    sp = JGkernel_jax(proc.pad_shape,proc.dx,proc.dy,proc.a0/4)
-    convQ = jnp.zeros_like(Qcomp)
+    sx, sy = start_x, start_y
+    tx, ty = proc.target_shape                        
+
+    # --- kernel in Fourier space -------------------------------------------------
+    # make sure JGkernel_jax already returns a jnp.ndarray of shape pad_shape
+    sp = JGkernel_jax(proc.pad_shape, proc.dx, proc.dy, proc.a0 / 4)
+
+    # --- allocate output in JAX --------------------------------------------------
+    convQ = jnp.zeros_like(Qcomp)                    # Qcomp should be jnp already
+
+    # --- one-time normalisation denominator --------------------------------------
+    mask = jnp.zeros(proc.pad_shape, dtype=jnp.float32)
+    mask = mask.at[sx:sx+tx, sy:sy+ty].set(1.0)
+
+    norm_fft  = jnp.fft.fft2(mask) * jnp.abs(sp)     # |kernel| → real weights
+    norm_full = jnp.fft.ifft2(norm_fft).real         # back to real space
+    norm_crop = norm_full[sx:sx+tx, sy:sy+ty]        # crop to field size
+
+    # --- loop over tensor components --------------------------------------------
     for i in range(2):
         for j in range(2):
-                    field_padded = jnp.zeros(proc.pad_shape,dtype=np.complex64)
-                    field_padded= field_padded.at[start_x:start_x + proc.target_shape[0],
-                                        start_y:start_y + proc.target_shape[1]].set(Qcomp[:,:,i,j])
-                    fft_Q = jnp.fft.fft2(field_padded)
-                    convQ = convQ.at[:,:,i,j].set(jnp.fft.ifft2(fft_Q*sp, axes=(0, 1)).real[start_x:start_x + proc.target_shape[0],
-                                        start_y:start_y + proc.target_shape[1]])
-                    
-    # Compute the symmetric part of Q
-    # sym(Q) = (Q + Q^T) / 2
+
+            # pad Qcomp[:,:,i,j] into the large array -----------------------------
+            field_padded = jnp.zeros(proc.pad_shape, dtype=jnp.complex64)
+            field_padded = field_padded.at[sx:sx+tx, sy:sy+ty].set(Qcomp[:, :, i, j])
+
+            # FFT → multiply by kernel → IFFT ------------------------------------
+            fft_Q   = jnp.fft.fft2(field_padded)
+            conv_fft = fft_Q * sp
+            conv_full = jnp.fft.ifft2(conv_fft)      # complex result, shape pad_shape
+            conv_crop = conv_full[sx:sx+tx, sy:sy+ty].real
+
+            # normalise & write back ---------------------------------------------
+            conv_norm = conv_crop / (norm_crop + 1e-8)
+            convQ = convQ.at[:, :, i, j].set(conv_norm)
+    # Return the computed Q tensor, flattened out and reordered to match the DofMap in dolfinx
+
     sym = (1/2)*(convQ+jnp.transpose(convQ,axes=(0, 1, 3, 2)))
     # Return the computed sym(Q) tensor, flattened out and reordered to match the DofMap in dolfinx
     return sym.reshape(-1,4)[proc.rev_DofMap].ravel()
