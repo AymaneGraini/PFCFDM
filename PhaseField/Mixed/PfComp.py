@@ -69,7 +69,7 @@ class PfComp:
             Im_dot = (self.pfFe.Im_amps[i]-self.pfFe.Im_amps_old[i])/self.pfFe.sim_params.dt
             j= Im_dot*ufl.grad(self.pfFe.Re_amps[i])-Re_dot*ufl.grad(self.pfFe.Im_amps[i])
             pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.pfFe.Re_amps[i]**2+self.pfFe.Im_amps[i]**2)/(2*self.sig**2))
-            S+=3*pref*(q[0]**2+q[1]**2)*j
+            S+=3*pref*(q[0]**2+q[1]**2)*j #TODO 3 is maybe wrong
             D+=d
         v_exp=restrictV(ufl.cross(extendV(j),D)/ufl.dot(D,D))
         self.velocity.interpolate(fem.Expression(ufl.conditional(ufl.ge(self.indicator,1e-2),v_exp,ufl.as_vector([0,0])),self.pfFe.vector_sp2.element.interpolation_points()))
@@ -84,7 +84,7 @@ class PfComp:
                 q_field = ufl.as_vector([q[0],q[1]]) 
                 pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.pfFe.Re_amps[i]**2+self.pfFe.Im_amps[i]**2)/(2*self.sig**2))
                 exp+=pref*ufl.outer(q_field,j)
-            exp*=(2*3*np.pi)/len(self.pfFe.pfc_params.qs) #TODO - or +?
+            exp*=(2*2*np.pi)/len(self.pfFe.pfc_params.qs) #TODO - or +?
         elif self.pfFe.pfc_params.motion=="v":
             print("Updating with velocity")
             self.compute_velocityPFC_bis()
@@ -102,7 +102,7 @@ class PfComp:
             q_field = ufl.as_vector([q[0],q[1],0]) 
             pref=(1/(2*np.pi*self.sig**2))*ufl.exp(-(self.pfFe.Re_amps[i]**2+self.pfFe.Im_amps[i]**2)/(2*self.sig**2))
             exp+=pref*ufl.outer(q_field,D)
-        exp*=(2*3*np.pi)/len(self.pfFe.pfc_params.qs)
+        exp*=(2*2*np.pi)/len(self.pfFe.pfc_params.qs)
         self.alphaT.interpolate(fem.Expression(exp,self.pfFe.tensor_sp3.element.interpolation_points()))
 
 
