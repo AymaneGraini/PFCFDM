@@ -49,7 +49,7 @@ for i in range(3):
 #TODO The class is not clean and it repeats many functions
 filterQ = True
 
-class PFCProcessor():
+class PFCProcessorEXT():
     def __init__(
         self,
         space_coords,
@@ -144,7 +144,7 @@ class PFCProcessor():
         derivative_array = jnp.zeros((self.ny, self.nx,2,2,2)).at[:,:,0,:,:].set(grad_x).at[:,:,1,:,:].set(grad_y)
         padded_array = jnp.pad(derivative_array, ((0, 0), (0, 0), (0, 1), (0, 1), (0, 1)), mode='constant', constant_values=0)
         curl = jnp.einsum('jkl,abkil->abij', Levi,padded_array,optimize=True)
-        return -curl.reshape(-1,9)[self.rev_DofMap].ravel()
+        return curl.reshape(-1,9)[self.rev_DofMap].ravel()
 
     # @partial(jax.jit, static_argnames=['self'])
     def Analytical_gradFuq(self,Qt,Ut,amps):
@@ -293,11 +293,11 @@ def Compute_Q_sym_jax(FE_psi,proc):
 
 def fuq_loss(FE_psi, U, proc):
     Q = Compute_Q_jax(FE_psi, proc)
-    return jnp.sum((Q - U)**2)
+    return 0.5*jnp.sum((Q - U)**2)
 
 def fuq_loss_sym(FE_psi, U, proc):
     Q = Compute_Q_sym_jax(FE_psi, proc)
-    return jnp.sum((Q - U)**2)
+    return 0.5*jnp.sum((Q - U)**2)
 
 def jax_computegradFuq(FE_psi,U,proc):
     k= jax.grad(fuq_loss,argnums=0)(FE_psi,U,proc)

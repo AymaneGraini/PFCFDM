@@ -395,12 +395,13 @@ def Compute_Q_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray:
         # Tensor product and scale
         return -(2 / 6) * jnp.einsum('ijk,ijl->ijkl', q_field, holder, optimize=True)
 
-    vecs = jnp.arange(len(proc.qs))
+    vecs  = jnp.arange(len(proc.qs))
     # Compute contributions from all modes using jax.vmap
     Qcomp = jnp.sum(jax.vmap(compute_single_q)(vecs), axis=0)
 
 
     #Filter Q with a Gaussian kernel in Fourier space
+    
     start_x = (proc.pad_shape[0] - proc.target_shape[0]) // 2
     start_y = (proc.pad_shape[1] - proc.target_shape[1]) // 2
     sx, sy = start_x, start_y
@@ -411,13 +412,13 @@ def Compute_Q_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray:
     sp = JGkernel_jax(proc.pad_shape, proc.dx, proc.dy, proc.a0 / 4)
 
     # --- allocate output in JAX --------------------------------------------------
-    convQ = jnp.zeros_like(Qcomp)                    # Qcomp should be jnp already
+    convQ = jnp.zeros_like(Qcomp)                    
 
     # --- one-time normalisation denominator --------------------------------------
     mask = jnp.zeros(proc.pad_shape, dtype=jnp.float32)
     mask = mask.at[sx:sx+tx, sy:sy+ty].set(1.0)
 
-    norm_fft  = jnp.fft.fft2(mask) * jnp.abs(sp)     # |kernel| → real weights
+    norm_fft  = jnp.fft.fft2(mask) * jnp.abs(sp)
     norm_full = jnp.fft.ifft2(norm_fft).real         # back to real space
     norm_crop = norm_full[sx:sx+tx, sy:sy+ty]        # crop to field size
 
@@ -432,7 +433,7 @@ def Compute_Q_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray:
             # FFT → multiply by kernel → IFFT ------------------------------------
             fft_Q   = jnp.fft.fft2(field_padded)
             conv_fft = fft_Q * sp
-            conv_full = jnp.fft.ifft2(conv_fft)      # complex result, shape pad_shape
+            conv_full = jnp.fft.ifft2(conv_fft)      
             conv_crop = conv_full[sx:sx+tx, sy:sy+ty].real
 
             # normalise & write back ---------------------------------------------
@@ -470,8 +471,8 @@ def Compute_Q_sym_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray
         sy = (proc.pad_shape[1] - proc.target_shape[1]) // 2      # start_y
         tx, ty = proc.target_shape                                 # shorthand
 
-        field_padded = jnp.zeros(proc.pad_shape, dtype=jnp.complex64)
-        field_padded = field_padded.at[sx:sx+tx, sy:sy+ty].set(psi * FF)
+        field_padded   = jnp.zeros(proc.pad_shape, dtype=jnp.complex64)
+        field_padded   = field_padded.at[sx:sx+tx, sy:sy+ty].set(psi * FF)
 
         image_fft      = jnp.fft.fft2(field_padded)
         convolved_fft  = image_fft * proc.AmpKernel
@@ -521,13 +522,13 @@ def Compute_Q_sym_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray
     sp = JGkernel_jax(proc.pad_shape, proc.dx, proc.dy, proc.a0 / 4)
 
     # --- allocate output in JAX --------------------------------------------------
-    convQ = jnp.zeros_like(Qcomp)                    # Qcomp should be jnp already
+    convQ = jnp.zeros_like(Qcomp)                    
 
     # --- one-time normalisation denominator --------------------------------------
     mask = jnp.zeros(proc.pad_shape, dtype=jnp.float32)
     mask = mask.at[sx:sx+tx, sy:sy+ty].set(1.0)
 
-    norm_fft  = jnp.fft.fft2(mask) * jnp.abs(sp)     # |kernel| → real weights
+    norm_fft  = jnp.fft.fft2(mask) * jnp.abs(sp)     
     norm_full = jnp.fft.ifft2(norm_fft).real         # back to real space
     norm_crop = norm_full[sx:sx+tx, sy:sy+ty]        # crop to field size
 
@@ -542,12 +543,13 @@ def Compute_Q_sym_jax(FE_psi: jnp.ndarray,proc : PFCProcessorEXT) -> jnp.ndarray
             # FFT → multiply by kernel → IFFT ------------------------------------
             fft_Q   = jnp.fft.fft2(field_padded)
             conv_fft = fft_Q * sp
-            conv_full = jnp.fft.ifft2(conv_fft)      # complex result, shape pad_shape
+            conv_full = jnp.fft.ifft2(conv_fft)     
             conv_crop = conv_full[sx:sx+tx, sy:sy+ty].real
 
             # normalise & write back ---------------------------------------------
             conv_norm = conv_crop / (norm_crop + 1e-8)
             convQ = convQ.at[:, :, i, j].set(conv_norm)
+
     # Return the computed Q tensor, flattened out and reordered to match the DofMap in dolfinx
 
     sym = (1/2)*(convQ+jnp.transpose(convQ,axes=(0, 1, 3, 2)))
@@ -569,7 +571,7 @@ def fuq_loss(FE_psi: jnp.ndarray, U: jnp.ndarray, proc: PFCProcessorEXT) -> floa
     """
     Q = Compute_Q_jax(FE_psi, proc) # Compute Q tensor for a given FE_psi
     # Compute the L2 loss between Q and U
-    return jnp.sum((Q - U)**2)
+    return 0.5*jnp.sum((Q - U)**2)
 
 def fuq_loss_sym(FE_psi: jnp.ndarray, U: jnp.ndarray, proc: PFCProcessorEXT) -> float:
     """
@@ -588,7 +590,7 @@ def fuq_loss_sym(FE_psi: jnp.ndarray, U: jnp.ndarray, proc: PFCProcessorEXT) -> 
     """
     Qsym = Compute_Q_sym_jax(FE_psi, proc) # Compute Q tensor for a given FE_psi
     # Compute the L2 loss between Q and U
-    return jnp.sum((Qsym - U)**2)
+    return 0.5*jnp.sum((Qsym - U)**2)
 
 
 def jax_computegradFuq(FE_psi: jnp.ndarray, U: jnp.ndarray, proc: PFCProcessorEXT) -> jnp.ndarray:
