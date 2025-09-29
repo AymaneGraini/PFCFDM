@@ -128,9 +128,12 @@ class MecFE :
         self.U      = fem.Function(self.tensor_sp2,name="U")
         self.Q      = fem.Function(self.tensor_sp2,name="Q")
         self.UE     = fem.Function(self.tensor_sp2,name="UE")
+        self.J     = fem.Function(self.tensor_sp2,name="J_psi")
         self.UEsym  = fem.Function(self.tensor_sp2,name="UEsym")
         self.u_disp = fem.Function(self.vector_sp2_quad)
         self.u_out  = fem.Function(self.vector_sp2,name="u")
+        self.zp_new  = fem.Function(self.vector_sp2_quad,name="zp_new")
+        self.zp_old  = fem.Function(self.vector_sp2_quad,name="zp_old")
 
         if self.periodic_UP:
             self.Uperp3 = fem.Function(self.pbcs_UPperp.function_space,name="UPperp3")
@@ -147,6 +150,8 @@ class MecFE :
         else:
             self.u_inc = ufl.TrialFunction(self.tensor_sp3)
             self.v_inc = ufl.TestFunction(self.tensor_sp3)
+            self.zp = ufl.TrialFunction(self.vector_sp2_quad)
+            self.dzp = ufl.TestFunction(self.vector_sp2_quad)
 
         if self.periodic_u :
             self.u_e = ufl.TrialFunction(self.pbcs_u.function_space)

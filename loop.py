@@ -1,7 +1,7 @@
-#Import the Mixed solver for the phase field part, we can chose between a mixed or Mixed formulation
-import PhaseField.Mixed as Mixed
-import PhaseField.Mixed.PfProc
-import PhaseField.Mixed.PfComp
+#Import the blocked solver for the phase field part, we can chose between a mixed or blocked formulation
+import PhaseField.Blocked as Blocked
+import PhaseField.Blocked.PfProc
+import PhaseField.Blocked.PfComp
 
 #Import the Mechanics solver
 import Mechanics
@@ -21,6 +21,7 @@ import dolfinx.io
 # import external processor for the phase field
 from PFCproc_TODO.ProcessPFC_padFFT import *
 
+from PFCproc_TODO.InitialC import *
 import time
 ###################################################
 ###################################################
@@ -32,34 +33,34 @@ comm = MPI.COMM_WORLD
 pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3), #lattice spacing
                         qs                 = hex_lat.qs, #array of 1st mode wave vectors
                         ps                 = hex_lat.ps, #array of 2nd mode wave vectors
-                        r                  = 0.1,        # cooling parameter
-                        avg                = -0.18,       #Target average
-                        periodic           = True,      #wether periodic bcs are used or not
+                        r                  = 1.4,        # cooling parameter
+                        avg                = -0.6,       #Target average
+                        periodic           = False,      #wether periodic bcs are used or not
                         deg                = 4,          #pde degree 4 for uncoserved, 6 = conserverd
                         motion             = "J",        # how do we compute the current
                         ConservationMethod = "LM",       # how do we conserve the average
-                        write_amps         = True)      #write amps ?
+                        write_amps         = False)      #write amps ?
 
 
 #Define geometry parameters
 geometry   = GeomParams(dx=pfcparms.a0/7,
                         dy=np.sqrt(3)*pfcparms.a0/12,
                         Nx=7*50,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
-                        Ny=12*15) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
+                        Ny=12*28) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
 
 #Define simulation parameters
 simparams = SimParams(Csh=1, # Coefficient of sh energy in psi evolution
-                      Cw          = 1,          # Coefficient of penalty term in psi evolution
+                      Cw          = 2,          # Coefficient of penalty term in psi evolution
                       penalty_Psi = True,       # is the penalty considerd in the evolution of psi ?
                       penalty_u   = True,       # is the penalty present in the definition of the elastic stress
                       dt          = 1e-1,       #time step
-                      tmax        = 1,       #max simulation duration
-                      outFreq     = 25,
+                      tmax        = 1500,       #max simulation duration
+                      outFreq     = 30,
                       L           = geometry.L, #domain length
                       H           = geometry.H) #domain height
 
 #SIMULATIONFILE name
-filename  = "Annihilationth1.4"+str(simparams.dt)+"_"+str(simparams.Cw)
+filename  = "trash"+str(simparams.dt)+"_"+str(simparams.Cw)
 path = "./out/trash/" # outputpath
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, path+filename+".xdmf", "w") #XDMF File for output
 
@@ -91,8 +92,8 @@ mechparams = MechParams(  lambda_      = 3*Amp(pfcparms.avg,pfcparms.r)**2, #lam
                           Cx           = 100*14*100/pfcparms.a0, # boundary term penalty weight in div-curl 
                           Cel          = 1, # weight of elastic energy
                           f            = f, # body force
-                          periodic_UP  = True,
-                          periodic_u   = True,
+                          periodic_UP  = False,
+                          periodic_u   = False,
                           addNullspace = False)
 
 #Define an FE mechanical processor with those parameter
@@ -111,15 +112,11 @@ write_sim_settings(path+filename+".json",SimulationNote,
 })
 
 #Define location of defects
-yp = geometry.dy*((geometry.Ny)//2-1)
-xp1 = 4*(geometry.L/10) #(geometry.L/(geometry.Nx+1))*(4*(geometry.Nx)//10-7)
-xp2 = 6*(geometry.L/10) # (geometry.L/(geometry.Nx+1))*(6*(geometry.Nx)//10-1)
+xp1 = geometry.L/2
+yp1 = 3*geometry.H/4
+yp2 = 1*geometry.H/4
 
-#an array of defects [x,y,[bx,by]]
-defects=[
-    # [xp1,yp,[1.*pfcparms.a0,0]],
-    # [xp2,yp,[-1.*pfcparms.a0,0]]
-    ]
+b=[+1.*pfcparms.a0,0]
 
 
 t=0 #time
@@ -131,9 +128,11 @@ timestamps=[t]
 SH_Energy = []
 
 #Define a Phasefield FE processor
-pfProc = Mixed.PfProc.PfProc(domain,pfcparms,simparams,file)
+pfProc = Blocked.PfProc.PfProc(domain,pfcparms,simparams,file)
 #Initialize psi with a defected crystal using defect array
-pfProc.Initialize_crystal(defects)
+Amp0 = Amp(pfcparms.avg,pfcparms.r)
+
+pfProc.Initialize(dislocation_loop(pfcparms.qs,pfcparms.ps,b,[geometry.L/2,geometry.H/2],100,Amp0,pfcparms.avg))
 
 # Initialize PFC solver and create the required forms
 pfProc.init_solver()
@@ -157,10 +156,11 @@ SH_Energy.append(pfProc.get_SH_Energy())
 
 
 
-mec_proc.Get_Curls()        # Compute curls
 
-mec_proc.mecFE.alpha.interpolate(mec_proc.mecComp.curlQ) 
+#Compute alphaTilde from PFC amplitudes (not curl Q)
+pfProc.pfComp.Compute_alpha_tilde()
 #Intialize alpha of mechanics
+mec_proc.mecFE.alpha.x.array[:]=pfProc.pfComp.alphaT.x.array[:]*-1.0 #because alphaT from PFC is of negative sign
 
 #Initialize mechanical solver without Dirichelt bcs
 mec_proc.init_solver([],[])
@@ -181,7 +181,6 @@ mec_proc.extract_UE()       # Extract elastic distortion
 
 mec_proc.compute_sym()      # Compute symmetric parts of UE and Q
 mec_proc.Get_Stress()       # Calculate stresses
-
 mec_proc.Get_Curls()        # Compute curls
 
 #Write output
@@ -291,7 +290,6 @@ while t < simparams.tmax:
 
     print("Current time = ", t)
     n += 1
-    break
 
 #Close file
 file.close()

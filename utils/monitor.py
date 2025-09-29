@@ -12,10 +12,11 @@ class CVmonitor :
         self.n = 0
         self.solve_num=1
     def monitor(self,ksp,n,rnorm):
+
         self.residuals.append(rnorm)
         self.its.append(n)
         if not self.set:
-            self.title= "field U "+str(ksp.getType())+" - "+str(ksp.getPC().getType())
+            self.title= "field UP "+str(ksp.getType())+" - "+str(ksp.getPC().getType())
             self.set= True
 
     def tao_monitor(self, tao):
@@ -32,11 +33,15 @@ class CVmonitor :
             self.set = True
 
     def plot(self):
-        plt.plot(self.its,self.residuals,marker="x",label="feval")
+        plt.plot(self.its,self.residuals,lw=0.9,marker="x",label=r"Iter. ${{{}}}$".format(self.solve_num))
         # plt.plot(self.its,self.grad_norms,marker="x",label="gnorm")
-        # plt.yscale("log")
+        plt.yscale("log")
         plt.title(self.title+" Solve num " + str(self.solve_num))
-        plt.show()
+        plt.xlabel(r"Solver Iterations")
+        plt.ylabel(r"LSFEM Residual")
+        plt.legend(frameon=False)
+        plt.savefig(f"./figs/res/UP_res{self.solve_num}.png",dpi=300)
+        # plt.show()
         self.clear()
 
     def clear(self):

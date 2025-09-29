@@ -140,8 +140,12 @@ class PFSolver:
                 self.problem_pfc.solve(self.b_pfc, self.x_pfc)
 
                 # Updates the solution vectors with the values from the local vector.
-                self.pfFe.psi_sol.x.array[:self.pfFe.sizes[0]] = self.x_pfc.array_r[self.pfFe.offsets[0]:self.pfFe.offsets[1]]
-                self.pfFe.chi_sol.x.array[:self.pfFe.sizes[1]] = self.x_pfc.array_r[self.pfFe.offsets[1]:self.pfFe.offsets[2]]
+                if self.pfFe.pfc_params.ConservationMethod=="LM":
+                    self.pfFe.psi_sol.x.array[:self.pfFe.sizes[0]] = self.x_pfc.array_r[self.pfFe.offsets[0]:self.pfFe.offsets[1]]
+                    self.pfFe.chi_sol.x.array[:self.pfFe.sizes[1]] = self.x_pfc.array_r[self.pfFe.offsets[1]:self.pfFe.offsets[2]]
+                else:
+                    self.pfFe.psi_sol.x.array[:self.pfFe.sizes[0]] = self.x_pfc.array_r[self.pfFe.offsets[0]:self.pfFe.offsets[1]]
+                    self.pfFe.chi_sol.x.array[:self.pfFe.sizes[1]] = self.x_pfc.array_r[self.pfFe.offsets[1]:]
 
 
     def set_chi_solver(self):

@@ -20,7 +20,7 @@ class MecSolver :
     """
         A class used to handle the FEM Solver of the Mechanics problem
     """
-    def __init__(self, mecFe : MecFE):
+    def __init__(self, mecFe : MecFE,Nmn_Bcs):
         """
         Initialize the MecSolver class.
         Creates the necessary forms for the incompatible plastic distortion and displacement fields. and calls the form compiler
@@ -30,7 +30,8 @@ class MecSolver :
         """
         self.mecFe = mecFe
         self.create_forms_UPperp()
-        self.create_forms_U()
+        self.create_forms_zp()
+        self.create_forms_U(Nmn_Bcs)
 
     def create_forms_UPperp(self):
         """
@@ -90,7 +91,7 @@ class MecSolver :
             
             self.mecFe.L_inc = fem.form(ufl.inner(-self.mecFe.alpha,tcurl(self.mecFe.v_inc))*self.mecFe.dx)
 
-    def create_forms_U(self):
+    def create_forms_U(self,Nmn_Bcs):
         """
         Create the bilinear and linear forms for the elasticy problem using displacement field :math:`\\mathbf{U_e}`.  
         The equations solved inside the body :math:`\Omega` are:
@@ -123,18 +124,44 @@ class MecSolver :
         Cel     = self.mecFe.mech_params.Cel
 
         if self.mecFe.sim_params.penalty_u:
-            self.mecFe.a_u = fem.form(ufl.inner(Cel*sigma(epsilon(self.mecFe.u_e),lambda_,mu_)
-                                                +Cw*epsilon(self.mecFe.u_e), epsilon(self.mecFe.v_e )) * self.mecFe.dx )
+            a_u = ufl.inner(Cel*sigma(epsilon(self.mecFe.u_e),lambda_,mu_)
+                                                +Cw*epsilon(self.mecFe.u_e), epsilon(self.mecFe.v_e )) * self.mecFe.dx 
             
-            self.mecFe.L_u = fem.form(ufl.inner(Cel*sigma(ufl.sym(self.mecFe.UP),lambda_,mu_)
-                                                +Cw*(ufl.sym(self.mecFe.UP)+ufl.sym(self.mecFe.Q)), epsilon(self.mecFe.v_e )) * self.mecFe.dx
-                                                +ufl.inner(self.mecFe.f,self.mecFe.v_e)* self.mecFe.dx)
+            L_u = ufl.inner(Cel*sigma(ufl.sym(self.mecFe.UP),lambda_,mu_)
+                                                +Cw*(ufl.sym(self.mecFe.UP)+ufl.sym(self.mecFe.Q)), epsilon(self.mecFe.v_e )) * self.mecFe.dx+ufl.inner(self.mecFe.f,self.mecFe.v_e)* self.mecFe.dx
         else:
-            self.mecFe.a_u = fem.form(ufl.inner(Cel*sigma(epsilon(self.mecFe.u_e),lambda_,mu_), ufl.grad(self.mecFe.v_e )) * self.mecFe.dx )
+            a_u = ufl.inner(Cel*sigma(epsilon(self.mecFe.u_e),lambda_,mu_), ufl.grad(self.mecFe.v_e )) * self.mecFe.dx 
             
-            self.mecFe.L_u = fem.form(ufl.inner(Cel*sigma(ufl.sym(self.mecFe.UP),lambda_,mu_), ufl.grad(self.mecFe.v_e )) * self.mecFe.dx
-                                      +ufl.inner(self.mecFe.f,self.mecFe.v_e)* self.mecFe.dx)
+            L_u = ufl.inner(Cel*sigma(ufl.sym(self.mecFe.UP),lambda_,mu_), ufl.grad(self.mecFe.v_e )) * self.mecFe.dx +ufl.inner(self.mecFe.f,self.mecFe.v_e)* self.mecFe.dx
     
+        #### Add Numann BCs in the linear Form
+        for (T,ds) in Nmn_Bcs:
+            L_u+=ufl.dot(T,self.mecFe.v_e)*ds
+
+        self.mecFe.L_u = fem.form(L_u)
+        self.mecFe.a_u = fem.form(a_u)
+    
+    def create_forms_zp(self)->None:
+        dt      = self.mecFe.sim_params.dt
+        a_zp = ufl.inner(ufl.grad(self.mecFe.zp),ufl.grad(self.mecFe.dzp))*self.mecFe.dx 
+        L_zp = ufl.inner(ufl.grad(self.mecFe.zp_old)+dt*self.mecFe.J,ufl.grad(self.mecFe.dzp))*self.mecFe.dx
+        self.mecFe.L_zp = fem.form(L_zp)
+        self.mecFe.a_zp = fem.form(a_zp)
+
+    def configure_solver_ZP(self):
+        self.mecFe.A_zp = fem.petsc.assemble_matrix(self.mecFe.a_zp, bcs=[])
+        self.mecFe.A_zp.assemble()
+
+        self.mecFe.problem_zp = PETSc.KSP().create(self.mecFe.domain.comm)
+        self.mecFe.problem_zp.setOperators(self.mecFe.A_zp)
+        self.mecFe.problem_zp.setType(PETSc.KSP.Type.PREONLY)
+        self.mecFe.problem_zp.rtol = 1e-8
+        self.mecFe.problem_zp.atol = 1e-10
+        pc = self.mecFe.problem_zp.getPC()
+        pc.setType(PETSc.PC.Type.LU)
+        pc.setFactorSolverType(petsc4py.PETSc.Mat.SolverType.MUMPS)
+        pc.setReusePreconditioner(True)
+        self.mecFe.b_zp = fem.petsc.create_vector(self.mecFe.L_zp)
 
     def configure_solver_UPperp(self,bcs )->None:
         """
@@ -173,8 +200,9 @@ class MecSolver :
             self.mecFe.problem_UPperp.setInitialGuessNonzero(True)
             # Set the solver type and convergence options
             self.mecFe.problem_UPperp.setType(PETSc.KSP.Type.BCGS)
-            self.mecFe.problem_UPperp.rtol = 1e-8
-            self.mecFe.problem_UPperp.atol = 1e-10
+            self.mecFe.problem_UPperp.rtol = 1e-4
+            self.mecFe.problem_UPperp.atol = 1e-6
+
             # self.mecFe.uPperpmoni = CVmonitor()
             # self.mecFe.problem_UPperp.setMonitor(self.mecFe.uPperpmoni.monitor)
 
@@ -182,6 +210,7 @@ class MecSolver :
             pc = self.mecFe.problem_UPperp.getPC()
             pc.setType(PETSc.PC.Type.GAMG)
             pc.setReusePreconditioner(True)
+            self.mecFe.b_inc = fem.petsc.create_vector(self.mecFe.L_inc)
 
 
 
@@ -232,7 +261,19 @@ class MecSolver :
             pc.setFactorSolverType(petsc4py.PETSc.Mat.SolverType.MUMPS)
             pc.setReusePreconditioner(True)
             self.mecFe.b_u = fem.petsc.create_vector(self.mecFe.L_u)
+    
+
+    def solve_zp(self):
+
+        #Set the vector to zero
+        with self.mecFe.b_zp.localForm() as loc_b:
+            loc_b.set(0)
         
+        fem.petsc.assemble_vector(self.mecFe.b_zp, self.mecFe.L_zp  ) # Assemble the linear form into the vector
+        self.mecFe.b_zp.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+
+        self.mecFe.problem_zp.solve(self.mecFe.b_zp, self.mecFe.zp_new.x.petsc_vec)
+
     def solve_UPperp(self,bcs):
         """
         Solve the div-curl system for the incompatible plastic distortion field.
@@ -250,27 +291,27 @@ class MecSolver :
                 print("Uperp done in : %s" % t_cpu.elapsed()[0])
                 self.mecFe.U4.interpolate(fem.Expression(sol,self.mecFe.vector_sp4.element.interpolation_points()))
                 # The solution is a vector field, we need to convert it to a tensor field
-                self.mecFe.UPerpendicular.interpolate(fem.Expression(v2T(self.mecFe.U4,2),self.mecFe.tensor_sp2.element.interpolation_points()))
+                self.mecFe.UPperp.interpolate(fem.Expression(v2T(self.mecFe.U4,2),self.mecFe.tensor_sp2.element.interpolation_points()))
             # self.mecFe.uPperpmoni.plot()
             # self.mecFe.uPperpmoni.n+=1
         else:
             with dolfinx.common.Timer() as t_cpu:
                 #Create a vector for the right-hand side of the system
-                b_inc = fem.petsc.create_vector(self.mecFe.L_inc)
                 #Set the vector to zero
-                with b_inc.localForm() as loc_b:
+                with self.mecFe.b_inc.localForm() as loc_b:
                     loc_b.set(0)
                 
-                fem.petsc.assemble_vector(b_inc, self.mecFe.L_inc) # Assemble the linear form into the vector
+                fem.petsc.assemble_vector(self.mecFe.b_inc, self.mecFe.L_inc) # Assemble the linear form into the vector
                 # Apply the boundary conditions to the vector
                 if len(bcs)>0:
-                    fem.petsc.apply_lifting(b_inc, [self.mecFe.a_inc], bcs=[bcs])
-                    b_inc.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+                    fem.petsc.apply_lifting(self.mecFe.b_inc, [self.mecFe.a_inc], bcs=[bcs])
+                    self.mecFe.b_inc.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
                     for bc in bcs:
-                        bc.set(b_inc.array_w)
+                        bc.set(self.mecFe.b_inc.array_w)
                 else:
-                   b_inc.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-                self.mecFe.problem_UPperp.solve(b_inc, self.mecFe.Uperp3.x.petsc_vec)
+                   self.mecFe.b_inc.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+                self.mecFe.problem_UPperp.solve(self.mecFe.b_inc, self.mecFe.Uperp3.x.petsc_vec)
+                # self.mecFe.uPperpmoni.plot()
                 print("UPperp done in : %s" % t_cpu.elapsed()[0])
                 self.mecFe.UPperp.interpolate(fem.Expression(restrictT(self.mecFe.Uperp3),self.mecFe.tensor_sp2.element.interpolation_points()))
 

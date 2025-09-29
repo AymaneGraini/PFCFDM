@@ -92,18 +92,21 @@ class PfProc:
         rng = np.random.default_rng(seed)
         initialCpsi = lambda x : (rng.random(x.shape[1])-0.5)+self.pfc_params.avg
         self.pfFe.psi0.interpolate(initialCpsi)
+        
         self.pfFe.psiout.interpolate(self.pfFe.psi0)
         avg1= fem.assemble_scalar(fem.form(self.pfFe.psiout*self.pfFe.dx))/(self.sim_params.L*self.sim_params.H)
         print("THe average in initing is ", avg1)
         self.avg_history.append(avg1)
 
-    def Initialize(self,f0):
+    def Initialize(self,f0:Callable):
         """
             INitializes the phase field with a given function `f0`, f0 should be a lambda function of compatible shape with the mesh.
         """
         self.pfFe.psi0.interpolate(f0)
         self.pfFe.psiout.interpolate(self.pfFe.psi0)
-
+        avg1= fem.assemble_scalar(fem.form(self.pfFe.psiout*self.pfFe.dx))/(self.sim_params.L*self.sim_params.H)
+        print("THe average in initing is ", avg1)
+        self.avg_history.append(avg1)
     
     def init_solver(self):
         """
@@ -128,7 +131,9 @@ class PfProc:
         """
         self.pfSolver.solve(self.avg_history[0])
 
-
+    def get_Q(self):
+        self.pfComp.compute_Q()
+        
     def get_SH_Energy(self):
         """
         Computes the total energy of the phase field system by assembling the energy form Into a scalar and returning its value.

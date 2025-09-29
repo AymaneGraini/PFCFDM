@@ -32,35 +32,36 @@ comm = MPI.COMM_WORLD
 pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3), #lattice spacing
                         qs                 = hex_lat.qs, #array of 1st mode wave vectors
                         ps                 = hex_lat.ps, #array of 2nd mode wave vectors
-                        r                  = 0.1,        # cooling parameter
-                        avg                = -0.18,       #Target average
-                        periodic           = True,      #wether periodic bcs are used or not
+                        r                  = 1.4,        # cooling parameter
+                        avg                = -0.5,       #Target average
+                        periodic           = False,      #wether periodic bcs are used or not
                         deg                = 4,          #pde degree 4 for uncoserved, 6 = conserverd
                         motion             = "J",        # how do we compute the current
-                        ConservationMethod = "LM",       # how do we conserve the average
-                        write_amps         = True)      #write amps ?
+                        ConservationMethod = "field",       # how do we conserve the average : scalar, field, LM or None
+                        write_amps         = False)      #write amps ?
 
 
 #Define geometry parameters
 geometry   = GeomParams(dx=pfcparms.a0/7,
                         dy=np.sqrt(3)*pfcparms.a0/12,
-                        Nx=7*50,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
-                        Ny=12*15) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
+                        Nx=7*10,  # the domain size should the multiple of 7 (or 3.5) for periodicity of e^(iq.x)
+                        Ny=12*20) # the domain size should the multiple of 12 for periodicity of e^(iq.x)
+
 
 #Define simulation parameters
 simparams = SimParams(Csh=1, # Coefficient of sh energy in psi evolution
-                      Cw          = 1,          # Coefficient of penalty term in psi evolution
+                      Cw          = 5,          # Coefficient of penalty term in psi evolution
                       penalty_Psi = True,       # is the penalty considerd in the evolution of psi ?
                       penalty_u   = True,       # is the penalty present in the definition of the elastic stress
                       dt          = 1e-1,       #time step
-                      tmax        = 1,       #max simulation duration
-                      outFreq     = 25,
+                      tmax        = 500,       #max simulation duration
+                      outFreq     = 100,
                       L           = geometry.L, #domain length
                       H           = geometry.H) #domain height
 
 #SIMULATIONFILE name
-filename  = "Annihilationth1.4"+str(simparams.dt)+"_"+str(simparams.Cw)
-path = "./out/trash/" # outputpath
+filename  = "tensile"+str(simparams.dt)+"_"+str(simparams.Cw)
+path = "./out/tensile/" # outputpath
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, path+filename+".xdmf", "w") #XDMF File for output
 
 #Build a rectangular domain of size LxH with Nx cells in x and Ny in y direction
@@ -91,8 +92,8 @@ mechparams = MechParams(  lambda_      = 3*Amp(pfcparms.avg,pfcparms.r)**2, #lam
                           Cx           = 100*14*100/pfcparms.a0, # boundary term penalty weight in div-curl 
                           Cel          = 1, # weight of elastic energy
                           f            = f, # body force
-                          periodic_UP  = True,
-                          periodic_u   = True,
+                          periodic_UP  = False,
+                          periodic_u   = False,
                           addNullspace = False)
 
 #Define an FE mechanical processor with those parameter
@@ -111,15 +112,11 @@ write_sim_settings(path+filename+".json",SimulationNote,
 })
 
 #Define location of defects
-yp = geometry.dy*((geometry.Ny)//2-1)
-xp1 = 4*(geometry.L/10) #(geometry.L/(geometry.Nx+1))*(4*(geometry.Nx)//10-7)
-xp2 = 6*(geometry.L/10) # (geometry.L/(geometry.Nx+1))*(6*(geometry.Nx)//10-1)
+xp1 = geometry.L/2
+yp1 = 3*geometry.H/4
+yp2 = 1*geometry.H/4
 
-#an array of defects [x,y,[bx,by]]
-defects=[
-    # [xp1,yp,[1.*pfcparms.a0,0]],
-    # [xp2,yp,[-1.*pfcparms.a0,0]]
-    ]
+defects=[]
 
 
 t=0 #time
@@ -152,18 +149,40 @@ pfProc.Solve()
 #correct if needed the average and update previous values (t=0)
 pfProc.Correct()
 
-#Append the current energy in SH array
 SH_Energy.append(pfProc.get_SH_Energy()) 
+#Append the current energy in SH array
 
 
 
-mec_proc.Get_Curls()        # Compute curls
 
-mec_proc.mecFE.alpha.interpolate(mec_proc.mecComp.curlQ) 
+#Compute alphaTilde from PFC amplitudes (not curl Q)
+pfProc.pfComp.Compute_alpha_tilde()
+
 #Intialize alpha of mechanics
+# mec_proc.mecFE.alpha.x.array[:]=pfProc.pfComp.alphaT.x.array[:]*-1.0 #because alphaT from PFC is of negative sign
+mec_proc.mecFE.alpha.x.array[:]=ProcEXT.Compute_alpha(mec_proc.mecFE.Q.x.array) #because alphaT from PFC is of negative sign
+
+
+#Defining Bcs for u
+def bottom(x):
+    return np.isclose(x[1], 0)
+
+def top(x):
+    return np.isclose(x[1], geometry.H) 
+
+bottom_dofs = fem.locate_dofs_geometrical(mec_proc.mecFE.vector_sp2_quad, bottom)
+V_uy, map =  mec_proc.mecFE.vector_sp2_quad.sub(1).collapse()
+top_dofs_uy = fem.locate_dofs_geometrical(( mec_proc.mecFE.vector_sp2_quad.sub(1), V_uy), top)
+uD_y = fem.Function(V_uy)
+uD_y.interpolate(lambda x : x[0]*0+geometry.H*0.05)
+bcs = [
+    fem.dirichletbc(np.zeros((2,)), bottom_dofs, mec_proc.mecFE.vector_sp2_quad),
+    fem.dirichletbc(uD_y, top_dofs_uy,  mec_proc.mecFE.vector_sp2_quad.sub(1)),
+]
+
 
 #Initialize mechanical solver without Dirichelt bcs
-mec_proc.init_solver([],[])
+mec_proc.init_solver([],bcs)
 
 #configure solverss
 mec_proc.ConfigureSolver_UPperp()
@@ -181,15 +200,14 @@ mec_proc.extract_UE()       # Extract elastic distortion
 
 mec_proc.compute_sym()      # Compute symmetric parts of UE and Q
 mec_proc.Get_Stress()       # Calculate stresses
-
 mec_proc.Get_Curls()        # Compute curls
 
 #Write output
 pfProc.write_output(t)
 mec_proc.write_output(t)
 
-file.close()
-exit()
+# file.close()
+# exit()
 
 #Compute absolute errors
 component_errors = [
@@ -241,15 +259,15 @@ while t < simparams.tmax:
         for i in range(len(pfcparms.qs))
     ])
     pfProc.pfComp.update_cAmps(amps, ProcEXT.rev_DofMap)
-    pfProc.pfComp.Compute_current()      # Topological charge current
     pfProc.pfComp.Compute_alpha_tilde()  # Dislocation density tensor
+    pfProc.pfComp.Compute_current()      # Topological charge current
 
     # -----------------------------
     # Mechanics update
     # -----------------------------
 
     mec_proc.mecFE.Q.x.array[:] = ProcEXT.Compute_Q(amps)  # Configurational distortion
-    mec_proc.mecFE.alpha.x.array[:] = pfProc.pfComp.alphaT.x.array[:] * -1.0  # alpha Jorge is - aplha mEc
+    mec_proc.mecFE.alpha.x.array[:] = ProcEXT.Compute_alpha(mec_proc.mecFE.Q.x.array)  # alpha Jorge is - aplha mEc
 
     mec_proc.update_UP(pfProc)  # Update UP from current state
     mec_proc.solveU()           # Solve mechanical equilibrium
@@ -291,7 +309,6 @@ while t < simparams.tmax:
 
     print("Current time = ", t)
     n += 1
-    break
 
 #Close file
 file.close()

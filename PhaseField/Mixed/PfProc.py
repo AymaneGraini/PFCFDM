@@ -38,10 +38,10 @@ class PfProc:
         self.avg_history=[]
         self.E_history=[]
         
-    def Initialize_crystal(self, defects):
+    def Initialize_crystal(self, defects,g):
         Amp =  lambda avg,r : (1/5)*(np.absolute(avg)+(1/3)*np.sqrt(15*r-36*avg**2))
         A= Amp(self.pfc_params.avg,self.pfc_params.r)
-        self.pfFe.zeta0.sub(0).interpolate(lambda x: initialize_from_burgers(self.pfc_params.qs,self.pfc_params.ps,defects,A,self.pfc_params.avg)(x))
+        self.pfFe.zeta0.sub(0).interpolate(lambda x: initialize_from_burgers(self.pfc_params.qs,self.pfc_params.ps,defects,A,self.pfc_params.avg,g)(x))
         self.pfFe.psiout.interpolate(self.pfFe.zeta0.sub(0))
         avg1= fem.assemble_scalar(fem.form(self.pfFe.psiout*self.pfFe.dx))/(self.sim_params.L*self.sim_params.H)
         self.avg_history.append(avg1)
@@ -62,6 +62,9 @@ class PfProc:
         self.E_history.append(E)
         return E
     
+    def get_Q(self):
+        self.pfComp.compute_Q()
+
     def Correct(self):
         self.pfFe.correct()
 

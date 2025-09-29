@@ -36,17 +36,26 @@ class MecComp:
         self.sigmaUe = fem.Function(mecFE.tensor_sp2,name="sigmaUe")
         self.sigmaQ  = fem.Function(mecFE.tensor_sp2,name="sigmaQ")
 
-        self.divsUe = fem.Function(mecFE.vector_sp2,name="div_sUe")
-        self.divsQ  = fem.Function(mecFE.vector_sp2,name="div_sQ")
+        self.divsUe = fem.Function(mecFE.vector_sp3,name="div_sUe")
+        self.divsQ  = fem.Function(mecFE.vector_sp3,name="div_sQ")
 
         self.V_pk   = fem.Function(mecFE.vector_sp3,name="VelocityPK")
         self.epsilon_psi = fem.Function(mecFE.tensor_sp2,name="epsilonPsi")
 
         self.Qsym        = fem.Function(mecFE.tensor_sp2,name="Qsym")
+        self.UPdot        = fem.Function(mecFE.tensor_sp2,name="UPdot")
 
         self.curlUE   = fem.Function(mecFE.tensor_sp3,name="curlUe")
+        self.curlU   = fem.Function(mecFE.tensor_sp3,name="curlU")
         self.curlUP   = fem.Function(mecFE.tensor_sp3,name="curlUp")
         self.curlQ   = fem.Function(mecFE.tensor_sp3,name="curlQ")
+        self.sumCurls   = fem.Function(mecFE.tensor_sp3,name="curlUe+curlUp")
+
+        
+        self.divalphaQ   = fem.Function(mecFE.vector_sp3,name="divalphaQ")
+        self.divalphaUe   = fem.Function(mecFE.vector_sp3,name="divalphaUe")
+        self.divalphaUp  = fem.Function(mecFE.vector_sp3,name="divalphaUP")
+        self.divalpha   = fem.Function(mecFE.vector_sp3,name="divalpha")
 
     def compute_sym(self):
         """
@@ -64,6 +73,9 @@ class MecComp:
         self.curlUE.interpolate(fem.Expression(tcurl(extendT(self.mecFE.UE)),self.mecFE.tensor_sp3.element.interpolation_points()))
         self.curlUP.interpolate(fem.Expression(tcurl(extendT(self.mecFE.UP)),self.mecFE.tensor_sp3.element.interpolation_points()))
         self.curlQ.interpolate(fem.Expression(tcurl(extendT(self.mecFE.Q)),self.mecFE.tensor_sp3.element.interpolation_points()))
+        self.curlU.interpolate(fem.Expression(tcurl(extendT(self.mecFE.U)),self.mecFE.tensor_sp3.element.interpolation_points()))
+
+        self.sumCurls.interpolate(fem.Expression(self.curlUE+self.curlUP,self.mecFE.tensor_sp3.element.interpolation_points()))
 
     def compute_stresses(self):
         """
@@ -99,8 +111,14 @@ class MecComp:
            
         """
 
-        self.divsUe.interpolate(fem.Expression(ufl.div(self.sigmaUe), self.mecFE.vector_sp2.element.interpolation_points()))
-        self.divsQ.interpolate(fem.Expression(ufl.div(self.sigmaQ), self.mecFE.vector_sp2.element.interpolation_points()))
+        self.divsUe.interpolate(fem.Expression(tdiv(self.sigmaUe), self.mecFE.vector_sp3.element.interpolation_points()))
+        self.divsQ.interpolate(fem.Expression(tdiv(self.sigmaQ), self.mecFE.vector_sp3.element.interpolation_points()))
+
+
+        # self.divalpha.interpolate(fem.Expression(ufl.div(self.mecFE.alpha), self.mecFE.vector_sp3.element.interpolation_points()))
+        # self.divalphaQ.interpolate(fem.Expression(ufl.div(self.curlQ), self.mecFE.vector_sp3.element.interpolation_points()))
+        #  self.divalphaUe.interpolate(fem.Expression(ufl.div(self.curlUE), self.mecFE.vector_sp3.element.interpolation_points()))
+        # self.divalphaUp.interpolate(fem.Expression(ufl.div(self.curlUP), self.mecFE.vector_sp3.element.interpolation_points()))
 
     def compute_velocity(self):
         """
@@ -112,17 +130,15 @@ class MecComp:
 
             Generates a vector field stored in self.V_pk
         """
-        Cw      = self.sim_params.Cw
-        e=5
         i, j,k, l = ufl.indices(4)
-        # V_pk_ufl = V_pk_ufl = ufl.as_vector(tuple(
-        #         (extendT(self.sigmaUe)[i,k] +Cw*ufl.transpose(extendT(self.mecFE.UE))[i,k]-Cw*ufl.transpose(extendT(self.mecFE.Q))[i,k]) * self.mecFE.alpha[k,j] * perm[i,j,l]
-        #         for l in range(3)  
-        #     ))
         V_pk_ufl = V_pk_ufl = ufl.as_vector(tuple(
-                (extendT(self.sigmaUe)[i,k] + e*ufl.transpose(tcurl(self.mecFE.alpha))[i,k]) * self.mecFE.alpha[k,j] * perm[i,j,l]
+                extendT(self.sigmaUe)[i,k] * self.mecFE.alpha[k,j] * perm[i,j,l]
                 for l in range(3)  
             ))
+        # V_pk_ufl  = ufl.as_vector(tuple(
+        #         (extendT(self.sigmaUe)[i,k] + e*ufl.transpose(tcurl(self.mecFE.alpha))[i,k]) * self.mecFE.alpha[k,j] * perm[i,j,l]
+        #         for l in range(3)  
+        #     ))
         self.V_pk.interpolate(fem.Expression(V_pk_ufl, self.mecFE.vector_sp3.element.interpolation_points()))
 
     def Compute_Epsilon_Psi(self,pfcSolver):

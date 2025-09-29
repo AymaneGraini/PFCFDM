@@ -210,7 +210,7 @@ class PFC4(PFFe):
 
         self.a11    = (1/(dt*Csh)+1-r)*ufl.inner(self.psi_current,self.q)*self.dx
         self.a12    = -1.0*ufl.inner(ufl.grad(self.chi_current),ufl.grad(self.q))*self.dx+2*ufl.inner(self.chi_current,self.q)*self.dx
-        self.a13    = 1.0*ufl.inner(self._lm,self.q)*self.dx
+        self.a13    = ufl.inner(self._lm,self.q)*self.dx
 
         self.a21    = ufl.inner(ufl.grad(self.psi_current),ufl.grad(self.v))*self.dx
         self.a22    = ufl.inner(self.chi_current,self.v)*self.dx
@@ -276,10 +276,13 @@ class PFC4(PFFe):
             beta = (self.psiout.x.petsc_vec.dot(self.b_basis.x.petsc_vec)-self.pfc_params.avg)/self.b_basis_norm
             self.psiout.x.petsc_vec.axpy(-1.0*beta, self.b_basis.x.petsc_vec)
             self.psi0.interpolate(self.psiout)
-
+            
+        elif self.ConservationMethod=="none":
+            self.psiout.interpolate(self.psi_sol)
+            self.psi0.interpolate(self.psiout)
 
         self.chi0.interpolate(self.chi_sol)
 
         self.psi0.x.scatter_forward()
         self.chi0.x.scatter_forward()
-
+        # print("AVG is ", fem.assemble_scalar(fem.form(self.psiout*ufl.dx))/(self.sim_params.L*self.sim_params.H))

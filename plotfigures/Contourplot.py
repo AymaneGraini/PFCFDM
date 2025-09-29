@@ -6,10 +6,10 @@ from matplotlib.ticker import ScalarFormatter
 t=2
 for c in [5]:
     cw=str(c)
-    for t in [0,1]:
+    for t in [0,11]:
         print(cw,t)
         root="./out/Static/"
-        file = root+"static0.1_"+cw+".h5"
+        file = root+"staticsym0.1_"+cw+".h5"
 
         X,Y,UE11, timest = get_im_data(file,"UE",t,0)
         X,Y,UE12, timest = get_im_data(file,"UE",t,1)
@@ -25,9 +25,9 @@ for c in [5]:
         fig , ax = plt.subplots(1,3,figsize=(8,3))
 
         # Plot 1
-        masked_data = np.ma.masked_where(np.abs(UE11) <= 1e-3*np.max(UE11), np.abs((UE11 - Q11))/ np.abs(UE11))
-        # cf1 = ax[0].contourf(X, Y,Q11, levels=100, cmap="seismic")
-        cf1 = ax[0].imshow(masked_data , origin="lower", cmap="seismic",vmin=0 , vmax=1)
+        # masked_data = np.ma.masked_where(np.abs(UE11) <= 1e-3*np.max(UE11), np.abs((UE11 - Q11))/ np.abs(UE11))
+        cf1 = ax[0].contourf(X, Y,UE11, levels=100, cmap="seismic")
+        # cf1 = ax[0].imshow(masked_data , origin="lower", cmap="seismic",vmin=0 , vmax=1)
         divider1 = make_axes_locatable(ax[0])
         cax1 = divider1.append_axes("right", size="3%", pad=0.05)
         cb1 = plt.colorbar(cf1, cax=cax1)
@@ -42,9 +42,9 @@ for c in [5]:
         # cb1.ax.figure.canvas.draw()
 
         # Plot 2
-        masked_data = np.ma.masked_where(np.abs(UE12 + UE21) <= 1e-5*np.max((UE12 + UE21)), np.abs((0.5 * (UE12 + UE21) -0.5 * (Q12 + Q21)))/np.abs((0.5 * (UE12 + UE21))))
-        # cf2 = ax[1].contourf(X, Y,0.5 * (Q12 + Q21) , levels=100, cmap="seismic")
-        cf2 = ax[1].imshow(masked_data , origin="lower", cmap="seismic",vmin=0 , vmax=1)
+        # masked_data = np.ma.masked_where(np.abs(UE12 + UE21) <= 1e-5*np.max((UE12 + UE21)), np.abs((0.5 * (UE12 + UE21) -0.5 * (Q12 + Q21)))/np.abs((0.5 * (UE12 + UE21))))
+        cf2 = ax[1].contourf(X, Y,UE12, levels=100, cmap="seismic")
+        # cf2 = ax[1].imshow(masked_data , origin="lower", cmap="seismic",vmin=0 , vmax=1)
         divider2 = make_axes_locatable(ax[1])
         cax2 = divider2.append_axes("right", size="3%", pad=0.05)
         cb2 = plt.colorbar(cf2, cax=cax2)
@@ -57,9 +57,9 @@ for c in [5]:
         # cb2.ax.figure.canvas.draw()
 
         # Plot 3
-        masked_data = np.ma.masked_where(np.abs(UE22)<= 1e-5*np.max(UE22), np.abs((UE22-Q22))/np.abs(UE22))
-        # cf3 = ax[2].contourf(X, Y,Q22, levels=100, cmap="seismic")
-        cf3 = ax[2].imshow(masked_data , origin="lower", cmap="seismic",vmin=0 , vmax=1)
+        # masked_data = np.ma.masked_where(np.abs(UE22)<= 1e-5*np.max(UE22), np.abs((UE22-Q22))/np.abs(UE22))
+        cf3 = ax[2].contourf(X, Y,UE22, levels=100, cmap="seismic")
+        # cf3 = ax[2].imshow(masked_data , origin="lower", cmap="seismic",vmin=0 , vmax=1)
         divider3 = make_axes_locatable(ax[2])
         cax3 = divider3.append_axes("right", size="3%", pad=0.05)
         cb3 = plt.colorbar(cf3, cax=cax3)

@@ -1,6 +1,5 @@
 #Import the Mixed solver for the phase field part, we can chose between a mixed or Mixed formulation
 import PhaseField.Mixed as Mixed
-import PhaseField.Mixed.PfProc
 import PhaseField.Mixed.PfComp
 
 #Import the Mechanics solver
@@ -20,6 +19,7 @@ from mpi4py import MPI
 import dolfinx.io
 # import external processor for the phase field
 from PFCproc_TODO.ProcessPFC_padFFT import *
+from petsc4py import PETSc
 
 import time
 ###################################################
@@ -28,17 +28,19 @@ import time
 #initialize a MPI communicator
 comm = MPI.COMM_WORLD
 
+
+
 # Define PFC parameters
 pfcparms =  PfcParams(  a0         = 4*np.pi/np.sqrt(3), #lattice spacing
                         qs                 = hex_lat.qs, #array of 1st mode wave vectors
                         ps                 = hex_lat.ps, #array of 2nd mode wave vectors
-                        r                  = 0.1,        # cooling parameter
-                        avg                = -0.18,       #Target average
+                        r                  = 0.8,        # cooling parameter
+                        avg                = -0.43,       #Target average
                         periodic           = True,      #wether periodic bcs are used or not
                         deg                = 4,          #pde degree 4 for uncoserved, 6 = conserverd
                         motion             = "J",        # how do we compute the current
                         ConservationMethod = "LM",       # how do we conserve the average
-                        write_amps         = True)      #write amps ?
+                        write_amps         = False)      #write amps ?
 
 
 #Define geometry parameters
@@ -49,17 +51,17 @@ geometry   = GeomParams(dx=pfcparms.a0/7,
 
 #Define simulation parameters
 simparams = SimParams(Csh=1, # Coefficient of sh energy in psi evolution
-                      Cw          = 1,          # Coefficient of penalty term in psi evolution
+                      Cw          = 0,          # Coefficient of penalty term in psi evolution
                       penalty_Psi = True,       # is the penalty considerd in the evolution of psi ?
-                      penalty_u   = True,       # is the penalty present in the definition of the elastic stress
+                      penalty_u   = False,       # is the penalty present in the definition of the elastic stress
                       dt          = 1e-1,       #time step
-                      tmax        = 1,       #max simulation duration
-                      outFreq     = 25,
+                      tmax        = 1500,       #max simulation duration
+                      outFreq     = 50,
                       L           = geometry.L, #domain length
                       H           = geometry.H) #domain height
 
 #SIMULATIONFILE name
-filename  = "Annihilationth1.4"+str(simparams.dt)+"_"+str(simparams.Cw)
+filename  = "ShearCompAmit"+str(simparams.dt)+"_"+str(simparams.Cw)+"_"
 path = "./out/trash/" # outputpath
 file = dolfinx.io.XDMFFile(MPI.COMM_WORLD, path+filename+".xdmf", "w") #XDMF File for output
 
@@ -84,7 +86,6 @@ Amp =  lambda avg,r : (1/5)*(np.absolute(avg)+(1/3)*np.sqrt(15*r-36*avg**2)) #gr
 print("The amplitude is ", Amp(pfcparms.avg,pfcparms.r))
 #Body force array
 f    = np.array([0, 0.0],dtype=float)
-
 #Define Mechanical parameters
 mechparams = MechParams(  lambda_      = 3*Amp(pfcparms.avg,pfcparms.r)**2, #lamé 1st coeff
                           mu           = 3*Amp(pfcparms.avg,pfcparms.r)**2, # Lamé 2nd coeff
@@ -95,6 +96,7 @@ mechparams = MechParams(  lambda_      = 3*Amp(pfcparms.avg,pfcparms.r)**2, #lam
                           periodic_u   = True,
                           addNullspace = False)
 
+print("Shear modulus is ",mechparams.mu)
 #Define an FE mechanical processor with those parameter
 mec_proc = Mechanics.MecProc.MecProc(domain,mechparams,simparams,file)
 
@@ -112,13 +114,13 @@ write_sim_settings(path+filename+".json",SimulationNote,
 
 #Define location of defects
 yp = geometry.dy*((geometry.Ny)//2-1)
-xp1 = 4*(geometry.L/10) #(geometry.L/(geometry.Nx+1))*(4*(geometry.Nx)//10-7)
-xp2 = 6*(geometry.L/10) # (geometry.L/(geometry.Nx+1))*(6*(geometry.Nx)//10-1)
+xp1 = 4*geometry.L/10 #(geometry.L/(geometry.Nx+1))*(4*(geometry.Nx)//10-7)
+xp2 = 6*geometry.L/10 #(geometry.L/(geometry.Nx+1))*(4*(geometry.Nx)//10-7)
 
 #an array of defects [x,y,[bx,by]]
 defects=[
-    # [xp1,yp,[1.*pfcparms.a0,0]],
-    # [xp2,yp,[-1.*pfcparms.a0,0]]
+    [xp1,yp,[1.*pfcparms.a0,0]],
+    [xp2,yp,[-1.*pfcparms.a0,0]]
     ]
 
 
@@ -162,12 +164,18 @@ mec_proc.Get_Curls()        # Compute curls
 mec_proc.mecFE.alpha.interpolate(mec_proc.mecComp.curlQ) 
 #Intialize alpha of mechanics
 
+
+
+print("Starting mecha")
+
+
 #Initialize mechanical solver without Dirichelt bcs
-mec_proc.init_solver([],[])
+mec_proc.init_solver([],[],[])
 
 #configure solverss
 mec_proc.ConfigureSolver_UPperp()
 mec_proc.ConfigureSolver_u()
+
 
 #Solve the div-curl system to get UpPerp
 mec_proc.solveUPperp()
@@ -188,8 +196,8 @@ mec_proc.Get_Curls()        # Compute curls
 pfProc.write_output(t)
 mec_proc.write_output(t)
 
-file.close()
-exit()
+# file.close()
+# exit()
 
 #Compute absolute errors
 component_errors = [
@@ -226,11 +234,11 @@ while t < simparams.tmax:
     # -----------------------------
 
     # compute penalty term using previous step's configuration
-    pfProc.pfFe.dFQW.x.array[:] = jax_computegradFuq_sym(
-        pfProc.pfFe.psiout.x.array,
-        mec_proc.mecFE.UEsym.x.array,
-        ProcEXT
-    )
+    # # pfProc.pfFe.dFQW.x.array[:] = jax_computegradFuq_sym(
+    # #     pfProc.pfFe.psiout.x.array,
+    # #     mec_proc.mecFE.UEsym.x.array,
+    # #     ProcEXT
+    # # )
 
     pfProc.Solve()    # Solve phase field evolution equation
     pfProc.Correct()  # Apply average correction, update output, and overwrite old solution
@@ -249,7 +257,6 @@ while t < simparams.tmax:
     # -----------------------------
 
     mec_proc.mecFE.Q.x.array[:] = ProcEXT.Compute_Q(amps)  # Configurational distortion
-    mec_proc.mecFE.alpha.x.array[:] = pfProc.pfComp.alphaT.x.array[:] * -1.0  # alpha Jorge is - aplha mEc
 
     mec_proc.update_UP(pfProc)  # Update UP from current state
     mec_proc.solveU()           # Solve mechanical equilibrium
@@ -258,6 +265,7 @@ while t < simparams.tmax:
     mec_proc.compute_sym()      # Compute symmetric parts of UE and Q
     mec_proc.Get_Stress()       # Calculate stresses
     mec_proc.Get_Curls()        # Compute curls
+    mec_proc.mecFE.alpha.interpolate(mec_proc.mecComp.curlQ) 
 
     # -----------------------------
     # indicators for monitoring
@@ -291,7 +299,7 @@ while t < simparams.tmax:
 
     print("Current time = ", t)
     n += 1
-    break
+    # break
 
 #Close file
 file.close()

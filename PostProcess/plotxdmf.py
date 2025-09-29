@@ -33,6 +33,7 @@ def get_im_data(filename,fieldname,ti,comp=None):
         # print("ti = ", ti)
         if ti >= len(sorted_timesteps):
             raise ValueError("Requested timestep is not available, maximum snapshot is", len(sorted_timesteps)-1)
+        print("tis is", ti)
         Full_field = f["Function/"+fieldname+"/"+sorted_timesteps[ti]]
         mesh= f["Mesh/mesh/geometry"]
         x = mesh[:, 0]

@@ -72,6 +72,7 @@ class SimParams:
     Cw         : float
     penalty_Psi: bool
     penalty_u  : bool
+    SOLVE_MEC : bool
     dt         : float
     tmax       : float
     outFreq    : int

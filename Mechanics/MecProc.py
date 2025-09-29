@@ -63,7 +63,9 @@ class MecProc:
 
     def init_solver(self,
                     bcsUperp: typing.List[_fem.DirichletBC],
-                    bcsu    : typing.List[_fem.DirichletBC]): 
+                    bcsu    : typing.List[_fem.DirichletBC],
+                    Nmn_Bcs
+                    ): 
         """
         Initialize the MecSolver with the given boundary conditions.
         This method sets up the MecSolver with the provided boundary conditions for the plastic distortion and displacement fields.
@@ -72,10 +74,10 @@ class MecProc:
             bcsUperp (typing.List[_fem.DirichletBC]): Dirchlet boundary conditions for the plastic distortion field.
             bcsu (typing.List[_fem.DirichletBC]): Dirichlet boundary conditions for the displacement field.
         """
-        self.mecSolver  = MecSolver(self.mecFE) # Initialize the MecSolver with the finite element part of the mechanics problem.
+        self.mecSolver  = MecSolver(self.mecFE,Nmn_Bcs) # Initialize the MecSolver with the finite element part of the mechanics problem.
         self.bcsUperp=bcsUperp # Set the boundary conditions for the plastic distortion field.
         self.bcs_u= bcsu # Set the boundary conditions for the displacement field.
-
+        
     def ConfigureSolver_UPperp(self):
         """
         Configure the MecSolver for the plastic distortion field.
@@ -98,6 +100,24 @@ class MecProc:
         """
         self.mecSolver.configure_solver_U(self.bcs_u)
 
+
+    def Configure_solver_zp(self):
+        self.mecSolver.configure_solver_ZP()
+    
+    def solve_Up_para(self):
+        self.mecSolver.solve_zp()
+        self.mecFE.UPpara.interpolate(fem.Expression(ufl.grad(self.mecFE.zp_new),self.mecFE.tensor_sp2.element.interpolation_points()))
+        self.mecFE.zp_old.interpolate(self.mecFE.zp_new)
+
+    def init_UP_para(self,defects,h):
+        exp = ufl.as_ufl(0)
+        x,y = ufl.SpatialCoordinate(self.mecFE.domain)
+        for defect in defects:
+            xi,yi,bi = defect
+            exp+=bi[0]*(1+ufl.tanh(-1*(x-xi)/h))*ufl.exp(-(y-yi)**2/h**2)
+        exp*=(1/(2*np.sqrt(np.pi)*h))
+        self.mecFE.UPpara.sub(1).interpolate(fem.Expression(exp,self.mecFE.tensor_sp2.sub(1).element.interpolation_points())) 
+
     def solveUPperp(self):
         """
             Calls the  preivously built Petsc solver to solve the div-curl system defining the plastic distortion field.
@@ -113,10 +133,10 @@ class MecProc:
         self.mecSolver.solve_U(self.bcs_u)
 
 
-    def update_UP(self,pfc_solver): #TODO add type hinting it maybe needs import.
+    def update_UP(self,pfc_solver=None): #TODO add type hinting it maybe needs import.
         """
             Update UP using a forward Euler scheme : 
-                :math:`\mathbf{Up}(t+dt) = \mathbf{Up}(t) - dt\mathcal{J}`
+                :math:`\mathbf{Up}(t+dt) = \mathbf{Up}(t) + dt\mathcal{J}`
             with J = (alpha x vd) is the plastic rate but also 
             the current linked with the conservation of burgers vector
             Thus the Argument is the whole PFCsolver that contains :math:`\mathcal{J}`.
@@ -124,8 +144,19 @@ class MecProc:
             Args:
                 pfc_solver (PFCSolver): The PFC solver instance that contains the current plastic rate J.
         """
-        self.mecFE.UP.x.array[:]-=self.sim_params.dt*pfc_solver.pfComp.J.x.array[:]  # TODO maybe petsc.axpy is much faster ...
+        dt=self.mecFE.sim_params.dt
+        if pfc_solver:
+            self.mecFE.UP.x.array[:]-=self.sim_params.dt*pfc_solver.pfComp.J.x.array[:]  # TODO maybe petsc.axpy is much faster ...
+        else:
+            raise NotImplementedError
+            # self.mecFE.UP.interpolate(
+            #     fem.Expression(ufl.grad(self.mecFE.zp_new)+self.mecFE.UPperp,self.mecFE.tensor_sp2.element.interpolation_points()))    
+            # self.mecFE.zp_old.interpolate(self.mecFE.zp_new)
 
+            # self.mecComp.UPdot.interpolate(fem.Expression(restrictT(tcrossv(self.mecFE.alpha,self.mecComp.V_pk)),self.mecFE.tensor_sp2.element.interpolation_points()))
+            # self.mecFE.UP.x.array[:]+=self.sim_params.dt*self.mecComp.UPdot.x.array[:]
+
+        
     def combine_UP(self):
         """
             Combines compatibale and incompatble parts of :math:`\mathbf{Up}`
